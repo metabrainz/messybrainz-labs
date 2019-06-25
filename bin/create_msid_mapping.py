@@ -3,6 +3,8 @@
 import sys
 import pprint
 import psycopg2
+import operator
+from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from icu import UnicodeString
 
@@ -20,18 +22,13 @@ SELECT_MSB_RECORDINGS_QUERY = '''
       FROM recording r
       JOIN recording_json rj ON r.id = rj.id
      WHERE left(rj.data->>'artist', 4) = 'Port'
-  ORDER BY musicbrainz.musicbrainz_collate(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT))),
-           musicbrainz.musicbrainz_collate(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)))
 '''
 
 SELECT_MB_RECORDINGS_QUERY = '''
-    SELECT * FROM (
-        SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
-               lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
-          FROM musicbrainz.recording_artist_credit_pairs 
-         WHERE left(artist_credit_name, 4) = 'Port') AS pairs
-  ORDER BY musicbrainz.musicbrainz_collate(lower(musicbrainz.musicbrainz_unaccent(pairs.artist_credit_name))),
-           musicbrainz.musicbrainz_collate(lower(musicbrainz.musicbrainz_unaccent(pairs.recording_name)))
+    SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
+           lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
+      FROM musicbrainz.recording_artist_credit_pairs 
+     WHERE left(artist_credit_name, 4) = 'Port'
 '''
 
 
@@ -114,69 +111,92 @@ def dump_similarities(conn, relations):
 # TODO: Filter MB tracks by album type
 def calculate_msid_mapping():
 
-    msb_row = []
-    mb_row = []
+    msb_recordings = []
+    mb_recordings = []
 
     recording_mapping = {}
 
-    print("query for MSB recordings")
+    print("load MSB recordings")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             curs.execute(SELECT_MSB_RECORDINGS_QUERY)
+            while True:
+                msb_row = curs.fetchone()
+                if not msb_row:
+                    break
 
-            print("query for MB recordings")
-            with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn2:
-                with conn2.cursor() as curs2:
-                    curs2.execute(SELECT_MB_RECORDINGS_QUERY)
-
-                    while True:
-                        if not msb_row:
-                            msb_row = curs.fetchone()
-                            if not msb_row:
-                                break
-                            
-                        if not mb_row:
-                            mb_row = curs2.fetchone()
-                            if not mb_row:
-                                break
-
-                        msb_artist = UnicodeString(msb_row[0])
-                        mb_artist = UnicodeString(mb_row[0])
-                        msb_recording = UnicodeString(msb_row[2])
-                        mb_recording = UnicodeString(mb_row[2])
-
-                        pp = "%-27s %-27s = %-27s %-27s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25])
-                        if msb_artist > mb_artist:
-                            print("> %s" % pp)
-                            mb_row = None
-                            continue
-
-                        if msb_artist < mb_artist:
-                            print("< %s" % pp)
-                            msb_row = None
-                            continue
-
-                        if msb_recording > mb_recording:
-                            print("} %s" % pp)
-                            mb_row = None
-                            continue
-
-                        if msb_recording < mb_recording:
-                            print("{ %s" % pp)
-                            msb_row = None
-                            continue
-
-                        print("= %s" % pp)
-
-                        k = "%s=%s" % (msb_row[1], mb_row[1])
-                        try:
-                            recording_mapping[k][0] += 1
-                        except KeyError:
-                            recording_mapping[k] = [ 1, msb_row[1], mb_row[1] ]
-
-                        msb_row = None
+                msb_recordings.append((msb_row[0], msb_row[1], msb_row[2], msb_row[3]))
 
 
+    print("sort MSB recordings (%d items)" % (len(msb_recordings)))
+    msb_recording_index = list(range(len(msb_recordings)))
+    msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec][0], msb_recordings[rec][2]))
+
+    # This sort runs faster, but takes more time to finish. Swapping?
+    #msb_recordings = sorted(msb_recordings, key=operator.itemgetter(0, 2))
+
+    print("load MB recordings")
+    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+        with conn.cursor() as curs:
+            curs.execute(SELECT_MB_RECORDINGS_QUERY)
+            while True:
+                mb_row = curs.fetchone()
+                if not mb_row:
+                    break
+
+                mb_recordings.append((mb_row[0], mb_row[1], mb_row[2], mb_row[3]))
+
+    print("sort MB recordings (%d items)" % (len(mb_recordings)))
+    mb_recording_index = list(range(len(mb_recordings)))
+    mb_recording_index = sorted(mb_recording_index, key=lambda rec: (mb_recordings[rec][0], mb_recordings[rec][2]))
+
+    mb_index = 0
+    msb_index = 0
+    while True:
+        if not msb_row:
+            try:
+                msb_row = msb_recordings[msb_recording_index[msb_index]]
+                msb_index += 1
+            except IndexError:
+                break
+            
+        if not mb_row:
+            try:
+                mb_row = mb_recordings[mb_recording_index[mb_index]]
+                mb_index += 1
+            except IndexError:
+                break
+
+        pp = "%-27s %-27s = %-27s %-27s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25])
+        if msb_row[0] > mb_row[0]:
+            print("> %s" % pp)
+            mb_row = None
+            continue
+
+        if msb_row[0] < mb_row[0]:
+            print("< %s" % pp)
+            msb_row = None
+            continue
+
+        if msb_row[2] > mb_row[2]:
+            print("} %s" % pp)
+            mb_row = None
+            continue
+
+        if msb_row[2] < mb_row[2]:
+            print("{ %s" % pp)
+            msb_row = None
+            continue
+
+        print("= %s" % pp)
+
+        k = "%s=%s" % (msb_row[1], mb_row[1])
+        try:
+            recording_mapping[k][0] += 1
+        except KeyError:
+            recording_mapping[k] = [ 1, msb_row[1], mb_row[1] ]
+
+        msb_row = None
 
 if __name__ == "__main__":
     calculate_msid_mapping()
