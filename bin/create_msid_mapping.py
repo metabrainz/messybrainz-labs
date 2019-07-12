@@ -20,15 +20,15 @@ SELECT_MSB_RECORDINGS_QUERY = '''
     SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
            lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, gid AS recording_msid
       FROM recording r
-      JOIN recording_json rj ON r.id = rj.id
-     WHERE left(rj.data->>'artist', 4) = 'Port'
+      JOIN recording_json rj ON r.data = rj.id
+     WHERE left(rj.data->>'artist', 6) = 'Portis'
 '''
 
 SELECT_MB_RECORDINGS_QUERY = '''
     SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
            lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
       FROM musicbrainz.recording_artist_credit_pairs 
-     WHERE left(artist_credit_name, 4) = 'Port'
+     WHERE left(artist_credit_name, 6) = 'Portis'
 '''
 
 
@@ -115,6 +115,7 @@ def calculate_msid_mapping():
     mb_recordings = []
 
     recording_mapping = {}
+    artist_mapping = {}
 
     print("load MSB recordings")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
@@ -150,24 +151,25 @@ def calculate_msid_mapping():
     mb_recording_index = list(range(len(mb_recordings)))
     mb_recording_index = sorted(mb_recording_index, key=lambda rec: (mb_recordings[rec][0], mb_recordings[rec][2]))
 
-    mb_index = 0
-    msb_index = 0
+    mb_index = -1
+    msb_index = -1
     while True:
         if not msb_row:
             try:
-                msb_row = msb_recordings[msb_recording_index[msb_index]]
                 msb_index += 1
+                msb_row = msb_recordings[msb_recording_index[msb_index]]
             except IndexError:
                 break
             
         if not mb_row:
             try:
-                mb_row = mb_recordings[mb_recording_index[mb_index]]
                 mb_index += 1
+                mb_row = mb_recordings[mb_recording_index[mb_index]]
             except IndexError:
                 break
 
-        pp = "%-27s %-27s = %-27s %-27s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25])
+#        pp = "%-27s %-27s = %-27s %-27s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25])
+        pp = "%-27s %-27s = %-27s %-27s" % (msb_row[2][0:25], msb_row[3][0:25], mb_row[2][0:25], mb_row[3][0:25])
         if msb_row[0] > mb_row[0]:
             print("> %s" % pp)
             mb_row = None
@@ -192,11 +194,32 @@ def calculate_msid_mapping():
 
         k = "%s=%s" % (msb_row[1], mb_row[1])
         try:
+            artist_mapping[k][0] += 1
+        except KeyError:
+            artist_mapping[k] = [ 1, msb_recording_index[msb_index], mb_recording_index[mb_index] ]
+
+
+        k = "%s=%s" % (msb_row[3], mb_row[3])
+        print("%-27s %s = %-27s %s" % (msb_row[2], msb_row[3], mb_row[2], mb_row[3]))
+        try:
             recording_mapping[k][0] += 1
         except KeyError:
-            recording_mapping[k] = [ 1, msb_row[1], mb_row[1] ]
+            recording_mapping[k] = [ 1, msb_recording_index[msb_index], mb_recording_index[mb_index] ]
 
         msb_row = None
+
+    print("artist votes: %d" % len(artist_mapping))
+    for k in sorted(artist_mapping, key=operator.itemgetter(0), reverse=True)[0:1000]:
+        a = artist_mapping[k]
+        print("%5d %-50s = %-50s" % (a[0], msb_recordings[a[1]][0][0:50], mb_recordings[a[2]][0][0:50]))
+
+    print()
+    print("recording votes: %d" % len(recording_mapping))
+    for k in sorted(recording_mapping, key=operator.itemgetter(0), reverse=True)[0:1000]:
+        r = recording_mapping[k]
+        print("%5d %-50s = %-50s" % (r[0], msb_recordings[r[1]][2][0:50], mb_recordings[r[2]][2][0:50]))
+
+
 
 if __name__ == "__main__":
     calculate_msid_mapping()
