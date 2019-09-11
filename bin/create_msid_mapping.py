@@ -4,9 +4,10 @@ import sys
 import pprint
 import psycopg2
 import operator
+import ujson
+from sys import stdout
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
-from icu import UnicodeString
 
 '''
 docker exec -it musicbrainz-docker_db_1 pg_dump -U musicbrainz -t recording_artist_credit_pairs musicbrainz_db > recording_artist_credit_pairs.sql
@@ -21,15 +22,15 @@ SELECT_MSB_RECORDINGS_QUERY = '''
            lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, gid AS recording_msid
       FROM recording r
       JOIN recording_json rj ON r.data = rj.id
-     WHERE left(rj.data->>'artist', 6) = 'Portis'
 '''
+WHERE left(rj.data->>'artist', 6) = 'Portis'
 
 SELECT_MB_RECORDINGS_QUERY = '''
     SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
            lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
       FROM musicbrainz.recording_artist_credit_pairs 
-     WHERE left(artist_credit_name, 6) = 'Portis'
 '''
+#WHERE left(artist_credit_name, 6) = 'Portis'
 
 
 def create_or_truncate_table(conn):
@@ -108,7 +109,6 @@ def dump_similarities(conn, relations):
             conn.commit()
 
 
-# TODO: Filter MB tracks by album type
 def calculate_msid_mapping():
 
     msb_recordings = []
@@ -133,9 +133,6 @@ def calculate_msid_mapping():
     msb_recording_index = list(range(len(msb_recordings)))
     msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec][0], msb_recordings[rec][2]))
 
-    # This sort runs faster, but takes more time to finish. Swapping?
-    #msb_recordings = sorted(msb_recordings, key=operator.itemgetter(0, 2))
-
     print("load MB recordings")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
@@ -145,7 +142,7 @@ def calculate_msid_mapping():
                 if not mb_row:
                     break
 
-                mb_recordings.append((mb_row[0], mb_row[1], mb_row[2], mb_row[3]))
+                mb_recordings.append((mb_row[0], mb_row[1][1:-1].split(","), mb_row[2], mb_row[3]))
 
     print("sort MB recordings (%d items)" % (len(mb_recordings)))
     mb_recording_index = list(range(len(mb_recordings)))
@@ -168,29 +165,28 @@ def calculate_msid_mapping():
             except IndexError:
                 break
 
-#        pp = "%-27s %-27s = %-27s %-27s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25])
-        pp = "%-27s %-27s = %-27s %-27s" % (msb_row[2][0:25], msb_row[3][0:25], mb_row[2][0:25], mb_row[3][0:25])
+        pp = "%-37s %-37s = %-27s %-37s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25])
         if msb_row[0] > mb_row[0]:
-            print("> %s" % pp)
+#            print("> %s" % pp)
             mb_row = None
             continue
 
         if msb_row[0] < mb_row[0]:
-            print("< %s" % pp)
+#            print("< %s" % pp)
             msb_row = None
             continue
 
         if msb_row[2] > mb_row[2]:
-            print("} %s" % pp)
+#            print("} %s" % pp)
             mb_row = None
             continue
 
         if msb_row[2] < mb_row[2]:
-            print("{ %s" % pp)
+#            print("{ %s" % pp)
             msb_row = None
             continue
 
-        print("= %s" % pp)
+#        print("= %s %s" % (pp, mb_row[3][0:15]))
 
         k = "%s=%s" % (msb_row[1], mb_row[1])
         try:
@@ -200,7 +196,6 @@ def calculate_msid_mapping():
 
 
         k = "%s=%s" % (msb_row[3], mb_row[3])
-        print("%-27s %s = %-27s %s" % (msb_row[2], msb_row[3], mb_row[2], mb_row[3]))
         try:
             recording_mapping[k][0] += 1
         except KeyError:
@@ -208,17 +203,40 @@ def calculate_msid_mapping():
 
         msb_row = None
 
-    print("artist votes: %d" % len(artist_mapping))
-    for k in sorted(artist_mapping, key=operator.itemgetter(0), reverse=True)[0:1000]:
-        a = artist_mapping[k]
-        print("%5d %-50s = %-50s" % (a[0], msb_recordings[a[1]][0][0:50], mb_recordings[a[2]][0][0:50]))
+# MSB
+#    SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
+#           lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, gid AS recording_msid
+# MB
+#    SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
+#           lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
+    top_index = []
+    for k in artist_mapping:
+        top_index.append((artist_mapping[k][0], k))
+    with open("artists.json", "w") as j:
+        for count, k in sorted(top_index, reverse=True):
+            a = artist_mapping[k]
+            j.write(ujson.dumps((a[0],
+                msb_recordings[a[1]][1], 
+                msb_recordings[a[1]][0], 
+                mb_recordings[a[2]][1],
+                mb_recordings[a[2]][0],
+                )) + "\n")
 
-    print()
-    print("recording votes: %d" % len(recording_mapping))
-    for k in sorted(recording_mapping, key=operator.itemgetter(0), reverse=True)[0:1000]:
-        r = recording_mapping[k]
-        print("%5d %-50s = %-50s" % (r[0], msb_recordings[r[1]][2][0:50], mb_recordings[r[2]][2][0:50]))
+    # Give a hint that we no longer need these
+    artist_mapping = None
 
+    top_index = []
+    for k in recording_mapping:
+        top_index.append((recording_mapping[k][0], k))
+    with open("recordings.json", "w") as j:
+        for count, k in sorted(top_index, reverse=True):
+            a = recording_mapping[k]
+            j.write(ujson.dumps((a[0],
+                msb_recordings[a[1]][3], 
+                msb_recordings[a[1]][2], 
+                mb_recordings[a[2]][3],
+                mb_recordings[a[2]][2],
+                )) + "\n")
 
 
 if __name__ == "__main__":

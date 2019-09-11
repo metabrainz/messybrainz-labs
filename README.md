@@ -6,8 +6,15 @@ To run the script:
 
 docker run -it --network=musicbrainz-docker_default metabrainz/msid-mapping
 
+To run the artist_pairs script:
+
+docker run -it --network=musicbrainz-docker_default metabrainz/msid-mapping /code/mapping/bin/create_recording_pairs.py
+
 
 ---
+
+Database preparation
+====================
 
 createuser -U musicbrainz -s -P msbpw
 

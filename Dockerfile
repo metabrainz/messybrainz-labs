@@ -19,7 +19,7 @@ WORKDIR /code/mapping
 COPY requirements.txt /code/mapping
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Now install our code, which may change frequently
-COPY . /code/mapping
+# Don't COPY code, we'll map the local dir
+#COPY . /code/mapping
 
 CMD /code/mapping/bin/create_msid_mapping.py
