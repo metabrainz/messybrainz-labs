@@ -19,15 +19,18 @@ psql -U messybrainz messybrainz < /tmp/recording_artist_credit_pairs.sql
 
 SELECT_MSB_RECORDINGS_QUERY = '''
     SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
-           lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, gid AS recording_msid
+           lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, r.gid AS recording_msid,
+           lower(musicbrainz.musicbrainz_unaccent(rl.title)) AS release_name, rl.gid AS release_msid
       FROM recording r
       JOIN recording_json rj ON r.data = rj.id
+      JOIN release rl ON r.release = rl.gid
 '''
-WHERE left(rj.data->>'artist', 6) = 'Portis'
+#WHERE left(rj.data->>'artist', 6) = 'Portis'
 
 SELECT_MB_RECORDINGS_QUERY = '''
     SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
-           lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
+                    lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid,
+                    lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_mbid
       FROM musicbrainz.recording_artist_credit_pairs 
 '''
 #WHERE left(artist_credit_name, 6) = 'Portis'
@@ -126,7 +129,7 @@ def calculate_msid_mapping():
                 if not msb_row:
                     break
 
-                msb_recordings.append((msb_row[0], msb_row[1], msb_row[2], msb_row[3]))
+                msb_recordings.append((msb_row[0], msb_row[1], msb_row[2], msb_row[3], msb_row[4], msb_row[5]))
 
 
     print("sort MSB recordings (%d items)" % (len(msb_recordings)))
@@ -142,7 +145,7 @@ def calculate_msid_mapping():
                 if not mb_row:
                     break
 
-                mb_recordings.append((mb_row[0], mb_row[1][1:-1].split(","), mb_row[2], mb_row[3]))
+                mb_recordings.append((mb_row[0], mb_row[1][1:-1].split(","), mb_row[2], mb_row[3], mb_row[4], mb_row[5]))
 
     print("sort MB recordings (%d items)" % (len(mb_recordings)))
     mb_recording_index = list(range(len(mb_recordings)))
@@ -206,9 +209,11 @@ def calculate_msid_mapping():
 # MSB
 #    SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
 #           lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, gid AS recording_msid
+#           lower(musicbrainz.musicbrainz_unaccent(rl.title)) AS release_name, rl.gid AS release_msid
 # MB
 #    SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
 #           lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
+#           lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_mbid
     top_index = []
     for k in artist_mapping:
         top_index.append((artist_mapping[k][0], k))
@@ -232,10 +237,18 @@ def calculate_msid_mapping():
         for count, k in sorted(top_index, reverse=True):
             a = recording_mapping[k]
             j.write(ujson.dumps((a[0],
-                msb_recordings[a[1]][3], 
+                msb_recordings[a[1]][0], 
+                msb_recordings[a[1]][1], 
                 msb_recordings[a[1]][2], 
-                mb_recordings[a[2]][3],
+                msb_recordings[a[1]][3], 
+                msb_recordings[a[1]][4], 
+                msb_recordings[a[1]][5], 
+                mb_recordings[a[2]][0],
+                mb_recordings[a[2]][1],
                 mb_recordings[a[2]][2],
+                mb_recordings[a[2]][3],
+                mb_recordings[a[2]][4],
+                mb_recordings[a[2]][5]
                 )) + "\n")
 
 

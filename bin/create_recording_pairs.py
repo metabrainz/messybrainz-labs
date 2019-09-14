@@ -16,6 +16,17 @@ BATCH_SIZE = 1000
 # digital release as the representative release for the release_group. the SELECT_RECORDING_PAIRS_QUERY then needs to 
 # fetch the tracks from those releases for the matching step. This is only done for non various artist albums.
 # NOTE: This will miss "bonus" tracks from alternate releases.
+# THis release_group centric view creates one recording/artist pair per release group, thus multiples in the pairs table.:(
+# to fix this: post process release groups that match the primary key and choose an album, avoid compilations. Keep only one release_group for primary key pair
+
+# idea: This same concept needs to be applied to recordings that appear on multiple releases.
+# Steps:
+#   Find all candidate recordings by taking recording title and artist_credit title as primary key.
+#   All recordings are exmined and an early digital album should be chosen. release type prefs:
+#     album, EP, single, [DC]
+
+# bad choice here: https://musicbrainz.org/recording/d7a32207-7ba0-497d-8139-92a8fcbee800
+# also still does not prefer album over other digital releases. Consider: if album release within 1 year of single release, pick that.
 SELECT_RELEASES_QUERY = '''
     SELECT rg.id, r.id, r.name, mf.id, mf.name, rc.country, date_year, date_month, date_day 
       FROM musicbrainz.release_group rg 
