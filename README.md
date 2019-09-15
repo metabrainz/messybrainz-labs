@@ -17,7 +17,7 @@ docker build -t metabrainz/msid-mapping . && docker run -it -v `pwd`:/code/mappi
 
 To host the static files in a docker container:
 
-docker run --name messybrainz-output -v `pwd`/html:/usr/share/nginx/html:ro -d nginx
+docker run --name messybrainz-output -p 80:80 -v `pwd`/html:/usr/share/nginx/html:ro -d nginx
 
 To get a DB prompt:
 

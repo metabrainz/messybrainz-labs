@@ -147,10 +147,10 @@ def dump_recordings_to_html():
         f.write('<html><head><meta charset="UTF-8"><title>artist matches</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/light.min.css"></link></head><body>\n')
         f.write("<h1>recording matches</h1>")
         for top_cat in sorted(categories.keys()):
-            f.write('<h3>%s</h3><p>' % top_cat)
+            f.write('<h3>%s</h3><p>' % top_cat.upper())
             for bot_cat in sorted(categories[top_cat].keys()):
                 cat = top_cat + bot_cat
-                f.write('<a href="%s.html">%s</a> ' % (cat, cat))
+                f.write('<a href="%s.html">%s</a> ' % (cat, cat.upper()))
             f.write('</p>')
             
         f.write("<p></body></html>\n")

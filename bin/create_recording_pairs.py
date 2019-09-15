@@ -12,50 +12,59 @@ from formats import DIGITAL_FORMATS, ANALOG_FORMATS
 
 BATCH_SIZE = 1000
 
-# This query will select release groups and order their releases by release date. The script will need to select the first
-# digital release as the representative release for the release_group. the SELECT_RECORDING_PAIRS_QUERY then needs to 
-# fetch the tracks from those releases for the matching step. This is only done for non various artist albums.
-# NOTE: This will miss "bonus" tracks from alternate releases.
-# THis release_group centric view creates one recording/artist pair per release group, thus multiples in the pairs table.:(
-# to fix this: post process release groups that match the primary key and choose an album, avoid compilations. Keep only one release_group for primary key pair
-
-# idea: This same concept needs to be applied to recordings that appear on multiple releases.
-# Steps:
-#   Find all candidate recordings by taking recording title and artist_credit title as primary key.
-#   All recordings are exmined and an early digital album should be chosen. release type prefs:
-#     album, EP, single, [DC]
-
-# bad choice here: https://musicbrainz.org/recording/d7a32207-7ba0-497d-8139-92a8fcbee800
-# also still does not prefer album over other digital releases. Consider: if album release within 1 year of single release, pick that.
-SELECT_RELEASES_QUERY = '''
-    SELECT rg.id, r.id, r.name, mf.id, mf.name, rc.country, date_year, date_month, date_day 
+# This query will fetch all release groups for single artist release groups and order them
+# so that early digital albums are preferred.
+SELECT_RELEASES_QUERY_TESTING = '''
+    SELECT ac.name, rg.id as rg, r.id, r.name, rgpt.name as pri_type, rgstj.release_group as sec_type, mf.name as format, date_year as year
       FROM musicbrainz.release_group rg 
       JOIN musicbrainz.release r ON rg.id = r.release_group 
       JOIN musicbrainz.release_country rc ON rc.release = r.id 
       JOIN musicbrainz.medium m ON m.release = r.id 
       JOIN musicbrainz.medium_format mf ON m.format = mf.id 
-     WHERE r.artist_credit != 1 
-  ORDER BY rg.name, date_year, date_month, date_day, country
+      JOIN musicbrainz.format_sort fs ON mf.id = fs.format
+JOIN musicbrainz.artist_credit ac ON rg.artist_credit = ac.id
+JOIN musicbrainz.release_group_primary_type rgpt ON rg.type = rgpt.id   
+FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
+     WHERE rg.artist_credit != 1 
+  ORDER BY rg.artist_credit, rg.type, sec_type desc, rg.name, fs.sort, date_year, date_month, date_day, country
+LIMIT 1000;
 '''
 
-SELECT_RECORDING_PAIRS_QUERY = '''
-    SELECT DISTINCT r.name as recording_name, r.gid as recording_mbid, 
-                    ac.name as artist_credit_name, array_agg(a.gid) as artist_mbids,
-                    rl.name as release_name, rl.gid as release_mbid
-             FROM recording r
-             JOIN artist_credit ac ON r.artist_credit = ac.id
-             JOIN artist_credit_name acn ON ac.id = acn.artist_credit
-             JOIN artist a ON acn.artist = a.id
-             JOIN track t ON t.recording = r.id
-             JOIN medium m ON m.id = t.medium
-             JOIN release rl ON rl.id = m.release
-             JOIN release_group rg ON rl.release_group = rg.id
-             JOIN recording_pair_releases rpr ON rl.id = rpr.id
-    WHERE rg.type = 1 
-    GROUP BY r.gid, r.name, ac.name, rl.name, rl.gid
-    ORDER BY r.name
+SELECT_RELEASES_QUERY = '''
+INSERT INTO musicbrainz.recording_pair_releases (release)
+      SELECT r.id
+       FROM musicbrainz.release_group rg 
+       JOIN musicbrainz.release r ON rg.id = r.release_group 
+       JOIN musicbrainz.release_country rc ON rc.release = r.id 
+       JOIN musicbrainz.medium m ON m.release = r.id 
+       JOIN musicbrainz.medium_format mf ON m.format = mf.id 
+       JOIN musicbrainz.format_sort fs ON mf.id = fs.format
+FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
+      WHERE rg.artist_credit != 1 
+   ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, rg.name, fs.sort, date_year, date_month, date_day, country
 '''
-#AND acn.name = 'Portishead'
+
+#    SELECT r.name as recording_name, r.gid as recording_mbid, 
+#           ac.name as artist_credit_name, array_agg(a.gid) as artist_mbids,
+#           rl.name as release_name, rl.gid as release_mbid,
+#           ac.id, rpr.id
+SELECT_RECORDING_PAIRS_QUERY = '''
+    SELECT r.name as recording_name, r.gid as recording_mbid, 
+           ac.name as artist_credit_name, array_agg(a.gid) as artist_mbids,
+           rl.name as release_name, rl.gid as release_mbid,
+           ac.id, rpr.id
+      FROM recording r
+      JOIN artist_credit ac ON r.artist_credit = ac.id
+      JOIN artist_credit_name acn ON ac.id = acn.artist_credit
+      JOIN artist a ON acn.artist = a.id
+      JOIN track t ON t.recording = r.id
+      JOIN medium m ON m.id = t.medium
+      JOIN release rl ON rl.id = m.release
+      JOIN recording_pair_releases rpr ON rl.id = rpr.release
+    GROUP BY rpr.id, ac.id, rl.gid, artist_credit_name, r.gid, r.name, a.gid, release_name
+    ORDER BY ac.id, rpr.id
+'''
+#WHERE acn.name = 'Portishead'
 
 CREATE_RECORDING_PAIRS_TABLE_QUERY = '''
     CREATE TABLE musicbrainz.recording_artist_credit_pairs (
@@ -70,13 +79,24 @@ CREATE_RECORDING_PAIRS_TABLE_QUERY = '''
 
 CREATE_RECORDING_PAIR_RELEASES_TABLE_QUERY = '''
     CREATE TABLE musicbrainz.recording_pair_releases (
-        id INTEGER
+        id      SERIAL, 
+        release INTEGER
     )
 '''
 
 CREATE_RECORDING_PAIRS_INDEXES_QUERY = '''
     CREATE INDEX artist_credit_name_ndx_recording_artist_credit_pairs 
         ON musicbrainz.recording_artist_credit_pairs(artist_credit_name);
+'''
+
+CREATE_RELEASES_SORT_INDEX = '''
+    CREATE INDEX recording_pair_releases_id
+        ON musicbrainz.recording_pair_releases(id)
+'''
+
+CREATE_RELEASES_ID_INDEX = '''
+    CREATE INDEX recording_pair_releases_release
+        ON musicbrainz.recording_pair_releases(release)
 '''
 
 def create_tables(msb_conn, mb_conn):
@@ -130,15 +150,6 @@ def insert_rows(curs, values):
         print("failed to insert rows", err)
 
 
-def insert_release_rows(curs, values):
-
-    query = "INSERT INTO musicbrainz.recording_pair_releases VALUES %s"
-    try:
-        execute_values(curs, query, values, template=None)
-    except psycopg2.OperationalError as err:
-        print("failed to insert rows", err)
-
-
 def create_indexes(conn):
     try:
         with conn.cursor() as curs:
@@ -152,64 +163,15 @@ def create_indexes(conn):
 def create_temp_release_table(conn):
 
     with conn.cursor() as curs:
-        with conn.cursor() as curs2:
-
-            count = 0
-            print("Run select releases query")
-            curs.execute(SELECT_RELEASES_QUERY)
-
-            print("Fetch releases and insert to MB")
-            last_rg = 0
-            releases = []
-            releases_per_rg = []
-            while True:
-                row = curs.fetchone()
-                if not row:
-                    break
-
-                # SELECT rg.id, r.id, r.name, mf.id, mf.name, rc.country, date_year, date_month, date_day 
-                if not last_rg:
-                    last_rg = row[0]
-                   
-                if row[0] != last_rg:
-
-                    # Pick a release from the release group. If there is only one release in the group, easy.
-                    if len(releases_per_rg) == 1:
-                        releases.append((releases_per_rg[0][1],))
-                    else:
-                        # Pick the first digital release. If none are digital, just take the first one
-                        for rel in releases_per_rg:
-                            if row[3] in DIGITAL_FORMATS:   
-                                releases.append((rel[1],))
-                                break
-                        else:
-                            releases.append((releases_per_rg[0][1],))
-
-                    releases_per_rg = []
-
-                releases_per_rg.append(row)
-                last_rg = row[0]
-
-                if len(releases) == 1000:
-                    insert_release_rows(curs2, releases)
-                    count += len(releases)
-                    releases = []
-
-                    if count % 100000 == 0:
-                        print("inserted %d rows." % count)
-                        conn.commit()
-
-
-            if releases:
-                insert_release_rows(curs2, releases)
-                count += len(releases)
-                conn.commit()
-        
-            print("inserted %d rows." % count)
+        print("Run select releases query")
+        curs.execute(SELECT_RELEASES_QUERY)
+        curs.execute(CREATE_RELEASES_ID_INDEX)
+        curs.execute(CREATE_RELEASES_SORT_INDEX)
 
     print("done")
 
 
+#     rec_name, rec_gid, ac_name, {artist_gids}, rel_name, rel_gid, ac.id, rpr.id, 
 def fetch_recording_pairs():
 
     with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as mb_conn:
@@ -226,31 +188,46 @@ def fetch_recording_pairs():
                 with msb_conn.cursor() as msb_curs:
 
                     rows = []
+                    last_ac_mbid = None
+                    artist_recordings = {}
                     count = 0
                     print("Run fetch recordings query")
                     mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY)
                     print("Fetch recordings and insert to MSB")
                     while True:
-                        for i in range(BATCH_SIZE):
-                            row = mb_curs.fetchone()
-                            if not row:
-                                break
-
-                            rows.append((row[0], row[1], row[2], row[3], row[4], row[5]))
-
-                        if len(rows):
-                            insert_rows(msb_curs, rows)
-                            count += len(rows)
-                        else:
+                        row = mb_curs.fetchone()
+                        if not row:
                             break
 
-                        rows = []
+                        if not last_ac_mbid:
+                            last_ac_mbid = row[6]
 
-                        if count % 1000000 == 0:
-                            print("inserted %d rows." % count)
-                            msb_conn.commit()
+                        if row[6] != last_ac_mbid:
+                            # insert the rows that made it
+                            rows.extend(artist_recordings.values())
+                            artist_recordings = {}
 
-                msb_conn.commit()
+                            if len(rows) > BATCH_SIZE:
+                                insert_rows(msb_curs, rows)
+                                count += len(rows)
+                                msb_conn.commit()
+                                print("inserted %d rows." % count)
+                                rows = []
+
+                        if row[0] not in artist_recordings:
+                            artist_recordings[row[0]] = (row[0], row[1], row[2], row[3], row[4], row[5])
+
+                        last_ac_mbid = row[6]
+
+
+                    rows.extend(artist_recordings.values())
+                    if rows:
+                        insert_rows(msb_curs, rows)
+                        msb_conn.commit()
+                        count += len(rows)
+
+
+                print("inserted %d rows total." % count)
 
                 print("Create indexes")
                 create_indexes(msb_conn)
