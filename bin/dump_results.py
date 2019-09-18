@@ -7,8 +7,18 @@ import ujson
 import re
 from operator import itemgetter
 from copy import deepcopy
+import psycopg2
 
 NUM_LEVELS = 3
+
+SELECT_QUERY = """
+    SELECT DISTINCT msb_artist_name, msb_artist_msid, msb_recording_name, msb_recording_msid, msb_release_name,  msb_release_msid,   
+                    mb_artist_name, mb_artist_gids, mb_recording_name, mb_recording_gid, mb_release_name, mb_release_gid 
+      FROM musicbrainz.msd_mb_mapping
+  ORDER BY msb_recording_name, msb_artist_name, msb_release_name, mb_artist_name, mb_recording_name, mb_release_name,
+           msb_artist_msid, msb_recording_msid, msb_release_msid, mb_artist_gids, mb_recording_gid, mb_release_gid
+""";
+#     WHERE msb_recording_name = 'o baby'
 
 def dump_artists_to_html():
 
@@ -65,42 +75,35 @@ def dump_artists_to_html():
 
 def dump_recordings_to_html():
 
-# MSB
-#    SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
-#           lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, gid AS recording_msid
-#           lower(musicbrainz.musicbrainz_unaccent(rl.title)) AS release_name, rl.gid AS release_msid
-# MB
-#    SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
-#           lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
-#           lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_mbid
-
     total_count = 0
 
     print("load & categorize recordings")
     categories = {}
-    with open("recordings.json", "r") as j:
-        while True:
-            line = j.readline()
-            if not line:
-                break
 
-            total_count += 1
-            data = ujson.loads(line)
+    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+        with conn.cursor() as curs:
+            curs.execute(SELECT_QUERY)
+            while True:
+                data = curs.fetchone()
+                if not data:
+                    break
 
-            key = data[3]
-            category = ""
+                total_count += 1
 
-            for i in range(NUM_LEVELS):
-                ch = key[i : i+1]
-                if re.search("^\w", ch, flags=re.A):
-                    category += ch
-                else:
-                    category += '*'
+                key = data[2]
+                category = ""
 
-            try:
-                categories[category].append(data)
-            except KeyError:
-                categories[category] = [data]
+                for i in range(NUM_LEVELS):
+                    ch = key[i : i+1]
+                    if re.search("^\w", ch, flags=re.A):
+                        category += ch
+                    else:
+                        category += '*'
+
+                try:
+                    categories[category].append(data)
+                except KeyError:
+                    categories[category] = [data]
 
 
 
@@ -127,16 +130,15 @@ def dump_recordings_to_html():
             f.write("<th>MB recording</th><th>MB release</th><th>rec id</th><th>rel id</th></tr>\n")
 
             last_data = []
-            for data in sorted(categories[cat], key=itemgetter(3,5,7)):
+            for data in sorted(categories[cat], key=itemgetter(2, 0, 6, 8, 10)):
 
                 # If rows are the same as the previous row, skip it
-                if last_data and data[1] == last_data[1] and data[3] == last_data[3] and data[5] == last_data[5] and data[7] == last_data[7] and data[8] == last_data[8] and \
-                    data[9] == last_data[9] and data[10] == last_data[10] and data[11] == last_data[11] and data[12] == last_data[12]:
-                    print("skip")
+                if last_data and data[0] == last_data[0] and data[2] == last_data[2] and data[4] == last_data[4] and data[6] == last_data[6] and data[7] == last_data[7] and data[8] == last_data[8] and \
+                    data[9] == last_data[9] and data[10] == last_data[10] and data[11] == last_data[11]:
                     continue
-
-                count, msb_artist_name, msb_artist_id, msb_recording_name, msb_recording_id, msb_release_name, msb_release_id, \
+                msb_artist_name, msb_artist_id, msb_recording_name, msb_recording_id, msb_release_name, msb_release_id, \
                     mb_artist_name, mb_artist_ids, mb_recording_name, mb_recording_id, mb_release_name, mb_release_id = data
+                mb_artist_ids = [ id for id in mb_artist_ids[1:-1].split(',') ] 
 
                 last_data = data
 
@@ -163,11 +165,11 @@ def dump_recordings_to_html():
 
 def write_indexes(level, categories, dest_dir):
 
-    if len(level) == NUM_LEVELS - 1:
+    if len(level) == NUM_LEVELS:
         return
 
     items = []
-    for ch in list("abcdefghijklmnopqrstuvwxyz0123456789_*"):
+    for ch in list("*_abcdefghijklmnopqrstuvwxyz0123456789"):
         new_level = level + ch
         for cat in categories.keys():
             if cat.startswith(new_level):
@@ -185,14 +187,16 @@ def write_indexes(level, categories, dest_dir):
         f.write('<html><head><meta charset="UTF-8"><title>%s</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/light.min.css"></link></head><body>\n' % title)
         f.write("<h1>%s</h1>" % title)
         if len(level):
-            f.write('<p><a href="/html/recording/index.html">top index</a></p>')
+            f.write('<p><a href="/recording/index.html">top index</a></p>')
 
+        f.write('<p>')
         for item in items:
             full_item = level + item
             if len(level) == NUM_LEVELS - 1:
-                f.write('<p><a href="%s.html">%s</a></p>' % (os.path.join(*list(full_item)), full_item.upper()))
+                f.write('<a href="%s.html" style="margin-right: 2em">%s</a>' % (os.path.join(*list(full_item)), full_item.upper()))
             else:
-                f.write('<p><a href="index-%s.html">%s</a></p>' % (full_item, full_item.upper()))
+                f.write('<a href="index-%s.html" style="margin-right: 2em">%s</a>' % (full_item, full_item.upper()))
+        f.write('</p>')
             
         f.write("</body></html>\n")
 

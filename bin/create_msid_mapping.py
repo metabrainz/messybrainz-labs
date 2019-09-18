@@ -5,9 +5,11 @@ import pprint
 import psycopg2
 import operator
 import ujson
+import uuid
 from sys import stdout
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
+from psycopg2.extras import execute_values, register_uuid
 
 '''
 docker exec -it musicbrainz-docker_db_1 pg_dump -U musicbrainz -t recording_artist_credit_pairs musicbrainz_db > recording_artist_credit_pairs.sql
@@ -35,45 +37,55 @@ SELECT_MB_RECORDINGS_QUERY = '''
 '''
 #WHERE left(artist_credit_name, 6) = 'Portis'
 
+CREATE_MAPPING_TABLE_QUERY = """
+    CREATE TABLE musicbrainz.msd_mb_mapping (
+        count INTEGER,
+        msb_artist_name    TEXT,
+        msb_artist_msid    UUID,
+        msb_recording_name TEXT,
+        msb_recording_msid UUID,
+        msb_release_name   TEXT,
+        msb_release_msid   UUID,
+        mb_artist_name     TEXT,
+        mb_artist_gids     UUID[],
+        mb_recording_name  TEXT,
+        mb_recording_gid   UUID,
+        mb_release_name    TEXT,
+        mb_release_gid     UUID
+    )
+"""
 
-def create_or_truncate_table(conn):
+CREATE_MAPPING_INDEXES_QUERIES = [
+    "CREATE INDEX msd_mb_mapping_msb_recording_name_ndx ON musicbrainz.msd_mb_mapping(msb_recording_name)",
+    "CREATE INDEX msd_mb_mapping_msb_recording_msid_ndx ON musicbrainz.msd_mb_mapping(msb_recording_msid)",
+    "CREATE INDEX msd_mb_mapping_msb_artist_name_ndx ON musicbrainz.msd_mb_mapping(msb_artist_name)",
+    "CREATE INDEX msd_mb_mapping_msb_artist_msid_ndx ON musicbrainz.msd_mb_mapping(msb_artist_msid)",
+    "CREATE INDEX msd_mb_mapping_msb_release_name_ndx ON musicbrainz.msd_mb_mapping(msb_release_name)",
+    "CREATE INDEX msd_mb_mapping_msb_release_msid_ndx ON musicbrainz.msd_mb_mapping(msb_release_msid)",
+]
 
-    try:
-        with conn.cursor() as curs:
-            print("create table")
-            curs.execute(CREATE_RELATIONS_TABLE_QUERY)
+def create_table(conn):
 
-    except DuplicateTable as err:
-        conn.rollback() 
-        try:
-            with conn.cursor() as curs:
-                print("truncate")
-                curs.execute(TRUNCATE_RELATIONS_TABLE_QUERY)
-                conn.commit()
+    with conn.cursor() as curs:
+        while True:
+            try:
+                print("create table")
+                curs.execute(CREATE_MAPPING_TABLE_QUERY)
+                conn.commit() 
+                break
 
-            with conn.cursor() as curs:
-                print("drop indexes")
-                try:
-                    curs.execute("DROP INDEX artist_artist_relations_artist_0_ndx")
-                    conn.commit()
-                except UndefinedObject as err:
-                    conn.rollback()
-
-                try:
-                    curs.execute("DROP INDEX artist_artist_relations_artist_1_ndx")
-                    conn.commit()
-                except UndefinedObject as err:
-                    conn.rollback()
-
-        except OperationalError as err:
-            print("failed to truncate existing table")
-            conn.rollback()
+            except DuplicateTable as err:
+                conn.rollback() 
+                curs.execute("DROP TABLE musicbrainz.msd_mb_mapping")
+                conn.commit() 
 
 
 def create_indexes(conn):
+
     try:
         with conn.cursor() as curs:
-            for query in CREATE_INDEX_QUERIES:
+            for query in CREATE_MAPPING_INDEXES_QUERIES:
+                print("  ", query)
                 curs.execute(query)
             conn.commit()
     except OperationalError as err:
@@ -83,35 +95,13 @@ def create_indexes(conn):
 
 def insert_rows(curs, values):
 
-    query = "INSERT INTO artist_artist_relations VALUES " + ",".join(values)
+    query = "INSERT INTO musicbrainz.msd_mb_mapping VALUES %s"
     try:
-        curs.execute(query)
+        execute_values(curs, query, values, template=None)
     except psycopg2.OperationalError as err:
         print("failed to insert rows")
 
             
-def dump_similarities(conn, relations):
-
-    create_or_truncate_table(conn)
-
-    values = []
-    with conn.cursor() as curs:
-
-        for k in relations:
-            r = relations[k]
-            if r[0] > 2:
-                values.append("(%d, %d, %d)" % (r[0], r[1], r[2]))
-
-            if len(values) > 1000:
-                insert_rows(curs, values)
-                conn.commit()
-                values = []
-
-        if len(values):
-            insert_rows(curs, values)
-            conn.commit()
-
-
 def calculate_msid_mapping():
 
     msb_recordings = []
@@ -206,51 +196,58 @@ def calculate_msid_mapping():
 
         msb_row = None
 
-# MSB
-#    SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
-#           lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, gid AS recording_msid
-#           lower(musicbrainz.musicbrainz_unaccent(rl.title)) AS release_name, rl.gid AS release_msid
-# MB
-#    SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
-#           lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid
-#           lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_mbid
-    top_index = []
-    for k in artist_mapping:
-        top_index.append((artist_mapping[k][0], k))
-    with open("artists.json", "w") as j:
-        for count, k in sorted(top_index, reverse=True):
-            a = artist_mapping[k]
-            j.write(ujson.dumps((a[0],
-                msb_recordings[a[1]][1], 
-                msb_recordings[a[1]][0], 
-                mb_recordings[a[2]][1],
-                mb_recordings[a[2]][0],
-                )) + "\n")
+#    top_index = []
+#    for k in artist_mapping:
+#        top_index.append((artist_mapping[k][0], k))
+#    with open("artists.json", "w") as j:
+#        for count, k in sorted(top_index, reverse=True):
+#            a = artist_mapping[k]
+#            j.write(ujson.dumps((a[0],
+#                msb_recordings[a[1]][1], 
+#                msb_recordings[a[1]][0], 
+#                mb_recordings[a[2]][1],
+#                mb_recordings[a[2]][0],
+#                )) + "\n")
 
-    # Give a hint that we no longer need these
-    artist_mapping = None
+#   # Give a hint that we no longer need these
+#    artist_mapping = None
 
+    create_table(conn)
+
+    print("save data to new table")
     top_index = []
     for k in recording_mapping:
         top_index.append((recording_mapping[k][0], k))
-    with open("recordings.json", "w") as j:
-        for count, k in sorted(top_index, reverse=True):
-            a = recording_mapping[k]
-            j.write(ujson.dumps((a[0],
-                msb_recordings[a[1]][0], 
-                msb_recordings[a[1]][1], 
-                msb_recordings[a[1]][2], 
-                msb_recordings[a[1]][3], 
-                msb_recordings[a[1]][4], 
-                msb_recordings[a[1]][5], 
-                mb_recordings[a[2]][0],
-                mb_recordings[a[2]][1],
-                mb_recordings[a[2]][2],
-                mb_recordings[a[2]][3],
-                mb_recordings[a[2]][4],
-                mb_recordings[a[2]][5]
-                )) + "\n")
 
+    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+        with conn.cursor() as curs:
+            register_uuid(curs)
+            rows = []
+            for count, k in sorted(top_index, reverse=True):
+                a = recording_mapping[k]
+                rows.append((a[0],
+                    msb_recordings[a[1]][0], 
+                    msb_recordings[a[1]][1], 
+                    msb_recordings[a[1]][2], 
+                    msb_recordings[a[1]][3], 
+                    msb_recordings[a[1]][4], 
+                    msb_recordings[a[1]][5], 
+                    mb_recordings[a[2]][0],
+                    [ uuid.UUID(u) for u in mb_recordings[a[2]][1]],
+                    mb_recordings[a[2]][2],
+                    mb_recordings[a[2]][3],
+                    mb_recordings[a[2]][4],
+                    mb_recordings[a[2]][5]
+                    ))
+                if len(rows) == 1000:
+                    insert_rows(curs, rows)
+                    rows = []
+
+            insert_rows(curs, rows)
+            conn.commit()
+
+            print("create indexes")
+            create_indexes(conn)
 
 if __name__ == "__main__":
     calculate_msid_mapping()
