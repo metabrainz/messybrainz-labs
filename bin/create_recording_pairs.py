@@ -23,7 +23,7 @@ SELECT_RELEASES_QUERY_TESTING = '''
 JOIN musicbrainz.artist_credit ac ON rg.artist_credit = ac.id
 JOIN musicbrainz.release_group_primary_type rgpt ON rg.type = rgpt.id   
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
-     WHERE rg.artist_credit != 1 and ac.name = 'Florence + the Machine'
+     WHERE rg.artist_credit != 1 
    ORDER BY rg.artist_credit, rg.type, sec_type desc, rg.name, fs.sort, date_year, date_month, date_day, country
 LIMIT 1000;
 '''
@@ -42,9 +42,9 @@ INSERT INTO musicbrainz.recording_pair_releases (release)
        JOIN musicbrainz.format_sort fs ON mf.id = fs.format
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
       WHERE rg.artist_credit != 1 
-   ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, rg.name, fs.sort, date_year, date_month, date_day, country
+   ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, fs.sort, date_year, date_month, date_day, country, rg.name
 '''
-#   ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, fs.sort, date_year, date_month, date_day, country, rg.name
+#   ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, rg.name, fs.sort, date_year, date_month, date_day, country
 
 #    SELECT r.name as recording_name, r.gid as recording_mbid, 
 #           ac.name as artist_credit_name, array_agg(a.gid) as artist_mbids,
