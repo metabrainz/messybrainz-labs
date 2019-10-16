@@ -8,8 +8,6 @@ import operator
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 
-from formats import DIGITAL_FORMATS, ANALOG_FORMATS
-
 BATCH_SIZE = 1000
 
 # This query will fetch all release groups for single artist release groups and order them
@@ -25,10 +23,13 @@ SELECT_RELEASES_QUERY_TESTING = '''
 JOIN musicbrainz.artist_credit ac ON rg.artist_credit = ac.id
 JOIN musicbrainz.release_group_primary_type rgpt ON rg.type = rgpt.id   
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
-     WHERE rg.artist_credit != 1 
-  ORDER BY rg.artist_credit, rg.type, sec_type desc, rg.name, fs.sort, date_year, date_month, date_day, country
+     WHERE rg.artist_credit != 1 and ac.name = 'Florence + the Machine'
+   ORDER BY rg.artist_credit, rg.type, sec_type desc, rg.name, fs.sort, date_year, date_month, date_day, country
 LIMIT 1000;
 '''
+
+# I think this version has a problem with NIN.
+#  ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, fs.sort, date_year, date_month, date_day, country, rg.name
 
 SELECT_RELEASES_QUERY = '''
 INSERT INTO musicbrainz.recording_pair_releases (release)
@@ -43,6 +44,7 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = r
       WHERE rg.artist_credit != 1 
    ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, rg.name, fs.sort, date_year, date_month, date_day, country
 '''
+#   ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, fs.sort, date_year, date_month, date_day, country, rg.name
 
 #    SELECT r.name as recording_name, r.gid as recording_mbid, 
 #           ac.name as artist_credit_name, array_agg(a.gid) as artist_mbids,
@@ -64,7 +66,7 @@ SELECT_RECORDING_PAIRS_QUERY = '''
     GROUP BY rpr.id, ac.id, rl.gid, artist_credit_name, r.gid, r.name, a.gid, release_name
     ORDER BY ac.id, rpr.id
 '''
-#WHERE acn.name = 'Portishead'
+#WHERE acn.name = 'Nine Inch Nails' and r.name = 'Hurt'
 
 CREATE_RECORDING_PAIRS_TABLE_QUERY = '''
     CREATE TABLE musicbrainz.recording_artist_credit_pairs (
