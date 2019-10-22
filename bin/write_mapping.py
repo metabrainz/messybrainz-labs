@@ -5,6 +5,7 @@ import pprint
 import os
 import bz2
 import psycopg2
+import ujson
 
 SELECT_RECORDING_QUERY = """
     SELECT DISTINCT msb_recording_msid, mb_recording_gid FROM musicbrainz.msd_mb_mapping
@@ -28,7 +29,7 @@ def dump_mapping(table, filename, query):
                     if not data:
                         break
 
-                    f.write(bytes("%s,%s\n" % (data[0], data[1]), "utf-8"))
+                    f.write(bytes(ujson.dumps((data[0], data[1])) + "\n", "utf-8"))
                     count += 1
 
                     if count % 1000000 == 0:
@@ -37,5 +38,5 @@ def dump_mapping(table, filename, query):
 
 
 if __name__ == "__main__":
-#    dump_mapping("recording", "recording-msid-mbid-mapping.bz2", SELECT_RECORDING_QUERY)
+    dump_mapping("recording", "recording-msid-mbid-mapping.bz2", SELECT_RECORDING_QUERY)
     dump_mapping("artist", "artist-msid-mbid-mapping.bz2", SELECT_ARTIST_QUERY)
