@@ -1,19 +1,31 @@
 To build the container:
 
-docker build -f Dockerfile -t metabrainz/msid-mapping .
+./run.sh build
 
-To run the script:
+To run the container so we can start programs in it:
 
-docker run -it --network=musicbrainz-docker_default -v `pwd`:/code/mapping metabrainz/msid-mapping
+./run.sh up
 
-To run the artist_pairs script:
+To create the MSID mapping you'll first need to run create recordings pairs script:
 
-docker run -it --network=musicbrainz-docker_default -v `pwd`:/code/mapping metabrainz/msid-mapping /code/mapping/bin/create_recording_pairs.py
+./run.sh bin/create_recording_pairs.py
 
+Once this completes, run the create msid mapping.py script:
+
+./run.sh bin/create_msid_mapping.py
+
+Now the mapping is complete. Test it using:
+
+./run.sh bin/test.sh
+
+
+Then you can write the mapping dump files to disk:
+
+./run.sh write_mapping.py
 
 To dump the HTML static pages
 
-docker build -t metabrainz/msid-mapping . && docker run -it -v `pwd`:/code/mapping --network=musicbrainz-docker_default metabrainz/msid-mapping /code/mapping/bin/dump_results.py
+./run.sh bin/dump_results.py
 
 To host the static files in a docker container:
 

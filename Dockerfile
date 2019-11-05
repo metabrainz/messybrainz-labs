@@ -1,8 +1,7 @@
 FROM python:3.7-stretch
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-                       git \
+    && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
 # PostgreSQL client
@@ -16,10 +15,8 @@ RUN apt-get update \
 RUN mkdir -p /code/mapping
 WORKDIR /code/mapping
 
+# Don't copy anything into the container, execpt for the python mods to install. We'll map the host dir into /code/mapping at run time
 COPY requirements.txt /code/mapping
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Don't COPY code, we'll map the local dir
-#COPY . /code/mapping
-
-CMD /code/mapping/bin/create_msid_mapping.py
+CMD /code/mapping/bin/_dummy_loop.py
