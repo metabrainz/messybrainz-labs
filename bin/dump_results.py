@@ -17,8 +17,8 @@ SELECT_QUERY = """
       FROM musicbrainz.msd_mb_mapping
   ORDER BY msb_recording_name, msb_artist_name, msb_release_name, mb_artist_name, mb_recording_name, mb_release_name,
            msb_artist_msid, msb_recording_msid, msb_release_msid, mb_artist_gids, mb_recording_gid, mb_release_gid
+LIMIT 1000
 """;
-#     WHERE msb_recording_name = 'o baby'
 
 def dump_artists_to_html():
 
@@ -97,6 +97,12 @@ def dump_recordings_to_html():
 
     total_count = 0
 
+    with open("recording-pairs-stats.json", "r") as f:
+        pair_stats = ujson.loads(f.read())
+
+    with open("mapping-stats.json", "r") as f:
+        mapping_stats = ujson.loads(f.read())
+
     print("load & categorize recordings")
     categories = {}
 
@@ -136,8 +142,6 @@ def dump_recordings_to_html():
         pass
 
     for cat in sorted(categories.keys()):
-        print("%s" % cat, end=("\b" * NUM_LEVELS))
-        sys.stdout.flush()
         dest_dir = os.path.join("html", "recording", *(list(cat[0:-1]))) 
         try:
             os.makedirs(dest_dir)
@@ -148,6 +152,7 @@ def dump_recordings_to_html():
             f.write('<html><head><meta charset="UTF-8"><title>%s recordings</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/light.min.css"></head><body>\n' % cat)
             f.write("<h1>%s recordings</h1>" % cat)
             f.write("<p>count: %d</p>" % len(categories[cat]))
+            f.write('<p><a href="/recording/index.html">top index</a></p>')
             f.write("<table><tr><th>num</th><th>MsB recording</th><th>MsB artist</th><th>MB artist</th>")
             f.write("<th>MB recording</th><th>MB release</th><th>rec id</th><th>rel id</th></tr>\n")
 
@@ -175,17 +180,17 @@ def dump_recordings_to_html():
             f.write("</table></body></html>\n")
 
     print("write indexes")
-    write_indexes("", categories, os.path.join("html", "recording"))
+    write_indexes("", categories, os.path.join("html", "recording"), pair_stats, mapping_stats)
+    with open(os.path.join("html", "index.html"), "w") as f:
+        f.write('<html><body><h1>data sets</h1><a href="recording/index.html">recording mapping</a></body></html>')
+
     print("done")
 
 
-def write_indexes(level, categories, dest_dir):
+def write_indexes(level, categories, dest_dir, pair_stats, mapping_stats):
 
     if len(level) == NUM_LEVELS:
         return
-
-    print("%s" % level, end=("\b" * NUM_LEVELS))
-    sys.stdout.flush()
 
     items = []
     for ch in list("*_abcdefghijklmnopqrstuvwxyz0123456789"):
@@ -198,13 +203,35 @@ def write_indexes(level, categories, dest_dir):
     if level == "":
         file_name = "index.html"
         title = "Recording matches: Main index"
+        stats = "<h3>Artist recording pair stats</h3><table>"
+
+        pair_stats["MB release coverage"] = "%.1f%%" % (100 * int(pair_stats["recording_pair_release_count"]) / float(pair_stats["mb_release_count"]))
+        pair_stats["MB recording coverage"] = "%.1f%%" % (100 * int(pair_stats["recording_artist_pair_count"]) / float(pair_stats["mb_recording_count"]))
+        for key in ("started", "recording_pair_release_count", "mb_release_count", "MB release coverage", "recording_artist_pair_count", "mb_release_count", "MB recording coverage", "completed"):
+            try:    
+                stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, '{:,}'.format(int(pair_stats[key])))
+            except ValueError:
+                stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, pair_stats[key])
+
+        stats += "</table>"
+        stats += "<h3>Mapping stats</h3><table>"
+        mapping_stats["MSID mapping coverage"] = "%.1f%%" % (100 * int(mapping_stats["msid_mbid_mapping_count"]) / float(mapping_stats["msb_recording_count"]))
+        for key in ("started", "artist_mapping_count", "recording_mapping_count", "mapping_count", "msb_recording_count", "MSID mapping coverage", "completed"):
+            try:    
+                stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, '{:,}'.format(int(pair_stats[key])))
+            except ValueError:
+                stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, pair_stats[key])
+        stats += "</table>"
     else:
         file_name = "index-%s.html" % level
         title = "Recording matches: index %s" % level.upper()
+        stats = ""
 
     with open(os.path.join(dest_dir, file_name), "w") as f:
         f.write('<html><head><meta charset="UTF-8"><title>%s</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/light.min.css"></link></head><body>\n' % title)
         f.write("<h1>%s</h1>" % title)
+        f.write(stats)
+        f.write("<h1>recording / artist mapping</h1>")
         if len(level) > 0:
             f.write('<p><a href="/recording/index.html">top index</a></p>')
 
@@ -223,7 +250,7 @@ def write_indexes(level, categories, dest_dir):
         f.write("</body></html>\n")
 
     for ch in list("abcdefghijklmnopqrstuvwxyz0123456789_*"):
-        write_indexes(level + ch, categories, dest_dir)
+        write_indexes(level + ch, categories, dest_dir, pair_stats, mapping_stats)
 
 
 if __name__ == "__main__":

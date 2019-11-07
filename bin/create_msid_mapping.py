@@ -6,6 +6,8 @@ import psycopg2
 import operator
 import ujson
 import uuid
+import datetime
+import subprocess
 from sys import stdout
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
@@ -104,6 +106,10 @@ def insert_rows(curs, values):
             
 def calculate_msid_mapping():
 
+    stats = {}
+    stats["started"] = datetime.datetime.utcnow().isoformat()
+    stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
+
     msb_recordings = []
     mb_recordings = []
 
@@ -121,6 +127,7 @@ def calculate_msid_mapping():
 
                 msb_recordings.append((msb_row[0], msb_row[1], msb_row[2], msb_row[3], msb_row[4], msb_row[5]))
 
+    stats["msb_recording_count"] = len(msb_recordings)
 
     print("sort MSB recordings (%d items)" % (len(msb_recordings)))
     msb_recording_index = list(range(len(msb_recordings)))
@@ -196,23 +203,10 @@ def calculate_msid_mapping():
 
         msb_row = None
 
-#    top_index = []
-#    for k in artist_mapping:
-#        top_index.append((artist_mapping[k][0], k))
-#    with open("artists.json", "w") as j:
-#        for count, k in sorted(top_index, reverse=True):
-#            a = artist_mapping[k]
-#            j.write(ujson.dumps((a[0],
-#                msb_recordings[a[1]][1], 
-#                msb_recordings[a[1]][0], 
-#                mb_recordings[a[2]][1],
-#                mb_recordings[a[2]][0],
-#                )) + "\n")
-
-#   # Give a hint that we no longer need these
-#    artist_mapping = None
-
     create_table(conn)
+
+    stats["artist_mapping_count"] = len(artist_mapping)
+    stats["recording_mapping_count"] = len(recording_mapping)
 
     print("save data to new table")
     top_index = []
@@ -223,6 +217,7 @@ def calculate_msid_mapping():
         with conn.cursor() as curs:
             register_uuid(curs)
             rows = []
+            total = 0
             for count, k in sorted(top_index, reverse=True):
                 a = recording_mapping[k]
                 rows.append((a[0],
@@ -239,6 +234,7 @@ def calculate_msid_mapping():
                     mb_recordings[a[2]][4],
                     mb_recordings[a[2]][5]
                     ))
+                total += 1
                 if len(rows) == 1000:
                     insert_rows(curs, rows)
                     rows = []
@@ -246,8 +242,16 @@ def calculate_msid_mapping():
             insert_rows(curs, rows)
             conn.commit()
 
+            stats['msid_mbid_mapping_count'] = total
+
             print("create indexes")
             create_indexes(conn)
+
+    stats["completed"] = datetime.datetime.utcnow().isoformat()
+
+    with open("mapping-stats.json", "w") as f:
+        f.write(ujson.dumps(stats, indent=2) + "\n")
+
 
 if __name__ == "__main__":
     calculate_msid_mapping()

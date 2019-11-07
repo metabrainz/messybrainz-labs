@@ -3,12 +3,15 @@
 import sys
 import pprint
 import psycopg2
+import ujson
 from psycopg2.extras import execute_values
 import operator
+import datetime
+import subprocess
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 
-BATCH_SIZE = 1000
+BATCH_SIZE = 5000
 
 # This query will fetch all release groups for single artist release groups and order them
 # so that early digital albums are preferred.
@@ -25,11 +28,7 @@ JOIN musicbrainz.release_group_primary_type rgpt ON rg.type = rgpt.id
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
      WHERE rg.artist_credit != 1 
    ORDER BY rg.artist_credit, rg.type, sec_type desc, rg.name, fs.sort, date_year, date_month, date_day, country
-LIMIT 1000;
 '''
-
-# I think this version has a problem with NIN.
-#  ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, fs.sort, date_year, date_month, date_day, country, rg.name
 
 SELECT_RELEASES_QUERY = '''
 INSERT INTO musicbrainz.recording_pair_releases (release)
@@ -44,12 +43,8 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = r
       WHERE rg.artist_credit != 1 
    ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, fs.sort, date_year, date_month, date_day, country, rg.name
 '''
-#   ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, rg.name, fs.sort, date_year, date_month, date_day, country
+#LIMIT 1000
 
-#    SELECT r.name as recording_name, r.gid as recording_mbid, 
-#           ac.name as artist_credit_name, array_agg(a.gid) as artist_mbids,
-#           rl.name as release_name, rl.gid as release_mbid,
-#           ac.id, rpr.id
 SELECT_RECORDING_PAIRS_QUERY = '''
     SELECT r.name as recording_name, r.gid as recording_mbid, 
            ac.name as artist_credit_name, array_agg(a.gid) as artist_mbids,
@@ -66,7 +61,6 @@ SELECT_RECORDING_PAIRS_QUERY = '''
     GROUP BY rpr.id, ac.id, rl.gid, artist_credit_name, r.gid, r.name, a.gid, release_name
     ORDER BY ac.id, rpr.id
 '''
-#WHERE acn.name = 'Nine Inch Nails' and r.name = 'Hurt'
 
 CREATE_RECORDING_PAIRS_TABLE_QUERY = '''
     CREATE TABLE musicbrainz.recording_artist_credit_pairs (
@@ -162,19 +156,26 @@ def create_indexes(conn):
         conn.rollback()
 
 
-def create_temp_release_table(conn):
+def create_temp_release_table(conn, stats):
 
     with conn.cursor() as curs:
         print("Run select releases query")
         curs.execute(SELECT_RELEASES_QUERY)
         curs.execute(CREATE_RELEASES_ID_INDEX)
         curs.execute(CREATE_RELEASES_SORT_INDEX)
+        curs.execute("SELECT COUNT(*) from musicbrainz.recording_pair_releases")
+        stats["recording_pair_release_count"] = curs.fetchone()[0]
+        curs.execute("SELECT COUNT(*) from musicbrainz.release")
+        stats["mb_release_count"] = curs.fetchone()[0]
 
-    print("done")
+    return stats
 
 
-#     rec_name, rec_gid, ac_name, {artist_gids}, rel_name, rel_gid, ac.id, rpr.id, 
 def fetch_recording_pairs():
+
+    stats = {}
+    stats["started"] = datetime.datetime.utcnow().isoformat()
+    stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
 
     with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as mb_conn:
         with mb_conn.cursor() as mb_curs:
@@ -185,7 +186,10 @@ def fetch_recording_pairs():
                 create_tables(msb_conn, mb_conn)
 
                 print("select releases from MB")
-                create_temp_release_table(mb_conn)
+                stats = create_temp_release_table(mb_conn, stats)
+
+                mb_curs.execute("SELECT COUNT(*) from musicbrainz.recording")
+                stats["mb_recording_count"] = mb_curs.fetchone()[0]
 
                 with msb_conn.cursor() as msb_curs:
 
@@ -230,12 +234,18 @@ def fetch_recording_pairs():
 
 
                 print("inserted %d rows total." % count)
+                stats["recording_artist_pair_count"] = count
 
                 print("Create indexes")
                 create_indexes(msb_conn)
 
+
+    stats["completed"] = datetime.datetime.utcnow().isoformat()
+    with open("recording-pairs-stats.json", "w") as f:
+        f.write(ujson.dumps(stats, indent=2) + "\n")
+
     print("done")
 
-# TODO: Select release format type and pick one release for many
+
 if __name__ == "__main__":
     fetch_recording_pairs()
