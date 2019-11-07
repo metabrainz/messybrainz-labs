@@ -17,7 +17,6 @@ SELECT_QUERY = """
       FROM musicbrainz.msd_mb_mapping
   ORDER BY msb_recording_name, msb_artist_name, msb_release_name, mb_artist_name, mb_recording_name, mb_release_name,
            msb_artist_msid, msb_recording_msid, msb_release_msid, mb_artist_gids, mb_recording_gid, mb_release_gid
-LIMIT 1000
 """;
 
 def dump_artists_to_html():
@@ -207,7 +206,8 @@ def write_indexes(level, categories, dest_dir, pair_stats, mapping_stats):
 
         pair_stats["MB release coverage"] = "%.1f%%" % (100 * int(pair_stats["recording_pair_release_count"]) / float(pair_stats["mb_release_count"]))
         pair_stats["MB recording coverage"] = "%.1f%%" % (100 * int(pair_stats["recording_artist_pair_count"]) / float(pair_stats["mb_recording_count"]))
-        for key in ("started", "recording_pair_release_count", "mb_release_count", "MB release coverage", "recording_artist_pair_count", "mb_release_count", "MB recording coverage", "completed"):
+        for key in ("started", "recording_pair_release_count", "mb_release_count", "MB release coverage", "recording_artist_pair_count", 
+            "mb_release_count", "MB recording coverage", "git commit hash", "completed"):
             try:    
                 stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, '{:,}'.format(int(pair_stats[key])))
             except ValueError:
@@ -216,11 +216,12 @@ def write_indexes(level, categories, dest_dir, pair_stats, mapping_stats):
         stats += "</table>"
         stats += "<h3>Mapping stats</h3><table>"
         mapping_stats["MSID mapping coverage"] = "%.1f%%" % (100 * int(mapping_stats["msid_mbid_mapping_count"]) / float(mapping_stats["msb_recording_count"]))
-        for key in ("started", "artist_mapping_count", "recording_mapping_count", "mapping_count", "msb_recording_count", "MSID mapping coverage", "completed"):
+        for key in ("started", "artist_mapping_count", "recording_mapping_count", "msid_mbid_mapping_count", "msb_recording_count", 
+            "MSID mapping coverage", "git commit hash", "completed"):
             try:    
-                stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, '{:,}'.format(int(pair_stats[key])))
+                stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, '{:,}'.format(int(mapping_stats[key])))
             except ValueError:
-                stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, pair_stats[key])
+                stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, mapping_stats[key])
         stats += "</table>"
     else:
         file_name = "index-%s.html" % level
