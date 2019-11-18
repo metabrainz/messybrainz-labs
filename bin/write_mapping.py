@@ -16,7 +16,7 @@ SELECT_ARTIST_QUERY = """
 """;
 
 SELECT_COMBINED_QUERY = """
-    SELECT DISTINCT msb_recording_msid, mb_recording_gid, msb_artist_msid, mb_artist_gids FROM musicbrainz.msd_mb_mapping
+    SELECT DISTINCT msb_recording_msid, mb_recording_gid, msb_artist_msid, mb_artist_gids, mb_artist_credit_id FROM musicbrainz.msd_mb_mapping
 """;
 
 def dump_mapping(table, filename, query):
@@ -34,7 +34,7 @@ def dump_mapping(table, filename, query):
                         break
 
                     artists = data[3][1:-1].split(",")
-                    f.write(bytes(ujson.dumps((data[0], data[1], data[2], artists)) + "\n", "utf-8"))
+                    f.write(bytes(ujson.dumps((data[0], data[1], data[2], artists, data[4])) + "\n", "utf-8"))
                     count += 1
 
                     if count % 1000000 == 0:

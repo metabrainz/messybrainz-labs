@@ -8,52 +8,51 @@ import ujson
 import uuid
 import datetime
 import subprocess
+import re
 from sys import stdout
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from psycopg2.extras import execute_values, register_uuid
 
-'''
-docker exec -it musicbrainz-docker_db_1 pg_dump -U musicbrainz -t recording_artist_credit_pairs musicbrainz_db > recording_artist_credit_pairs.sql
-create schema musicbrainz;
-grant musicbrainz to messybrainz;
-docker exec -it musicbrainz-docker_db_1 bash
-psql -U messybrainz messybrainz < /tmp/recording_artist_credit_pairs.sql
-'''
+REMOVE_NON_WORD_CHARS = True
 
 SELECT_MSB_RECORDINGS_QUERY = '''
-    SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
-           lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, r.gid AS recording_msid,
-           lower(musicbrainz.musicbrainz_unaccent(rl.title)) AS release_name, rl.gid AS release_msid
-      FROM recording r
-      JOIN recording_json rj ON r.data = rj.id
-      JOIN release rl ON r.release = rl.gid
+         SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
+                lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, r.gid AS recording_msid,
+                lower(musicbrainz.musicbrainz_unaccent(rl.title)) AS release_name, rl.gid AS release_msid
+           FROM recording r
+           JOIN recording_json rj ON r.data = rj.id
+LEFT OUTER JOIN release rl ON r.release = rl.gid
 '''
 #WHERE left(rj.data->>'artist', 6) = 'Portis'
+#WHERE      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)), 4) = 'guns'
+#  AND      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)), 3) = 'ain'
 
 SELECT_MB_RECORDINGS_QUERY = '''
     SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
                     lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid,
-                    lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_mbid
+                    lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_mbid,
+                    artist_credit_id
       FROM musicbrainz.recording_artist_credit_pairs 
 '''
-#WHERE left(artist_credit_name, 6) = 'Portis'
+#WHERE left(artist_credit_name, 4) = 'Guns'
 
 CREATE_MAPPING_TABLE_QUERY = """
     CREATE TABLE musicbrainz.msd_mb_mapping (
         count INTEGER,
-        msb_artist_name    TEXT,
-        msb_artist_msid    UUID,
-        msb_recording_name TEXT,
-        msb_recording_msid UUID,
-        msb_release_name   TEXT,
-        msb_release_msid   UUID,
-        mb_artist_name     TEXT,
-        mb_artist_gids     UUID[],
-        mb_recording_name  TEXT,
-        mb_recording_gid   UUID,
-        mb_release_name    TEXT,
-        mb_release_gid     UUID
+        msb_artist_name     TEXT,
+        msb_artist_msid     UUID,
+        msb_recording_name  TEXT,
+        msb_recording_msid  UUID,
+        msb_release_name    TEXT,
+        msb_release_msid    UUID,
+        mb_artist_name      TEXT,
+        mb_artist_gids      UUID[],
+        mb_artist_credit_id INTEGER, 
+        mb_recording_name   TEXT,
+        mb_recording_gid    UUID,
+        mb_release_name     TEXT,
+        mb_release_gid      UUID
     )
 """
 
@@ -125,7 +124,14 @@ def calculate_msid_mapping():
                 if not msb_row:
                     break
 
-                msb_recordings.append((msb_row[0], msb_row[1], msb_row[2], msb_row[3], msb_row[4], msb_row[5]))
+                artist = msb_row[0]
+                recording = msb_row[2]
+                release = msb_row[4] or ""
+                if REMOVE_NON_WORD_CHARS:
+                    artist = re.sub(r'\W+', '', artist)
+                    recording = re.sub(r'\W+', '', recording)
+                    release = re.sub(r'\W+', '', release)
+                msb_recordings.append((artist, msb_row[1], recording, msb_row[3], release, msb_row[5]))
 
     stats["msb_recording_count"] = len(msb_recordings)
 
@@ -142,7 +148,14 @@ def calculate_msid_mapping():
                 if not mb_row:
                     break
 
-                mb_recordings.append((mb_row[0], mb_row[1][1:-1].split(","), mb_row[2], mb_row[3], mb_row[4], mb_row[5]))
+                artist = mb_row[0]
+                recording = mb_row[2]
+                release = mb_row[4]
+                if REMOVE_NON_WORD_CHARS:
+                    artist = re.sub(r'\W+', '', artist)
+                    recording = re.sub(r'\W+', '', recording)
+                    release = re.sub(r'\W+', '', release)
+                mb_recordings.append((artist, mb_row[1][1:-1].split(","), recording, mb_row[3], release, mb_row[5], mb_row[6]))
 
     print("sort MB recordings (%d items)" % (len(mb_recordings)))
     mb_recording_index = list(range(len(mb_recordings)))
@@ -165,7 +178,7 @@ def calculate_msid_mapping():
             except IndexError:
                 break
 
-        pp = "%-37s %-37s = %-27s %-37s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25])
+        pp = "%-37s %-37s = %-27s %-37s %s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25], msb_row[3][0:8])
         if msb_row[0] > mb_row[0]:
 #            print("> %s" % pp)
             mb_row = None
@@ -229,6 +242,7 @@ def calculate_msid_mapping():
                     msb_recordings[a[1]][5], 
                     mb_recordings[a[2]][0],
                     [ uuid.UUID(u) for u in mb_recordings[a[2]][1]],
+                    mb_recordings[a[2]][6],
                     mb_recordings[a[2]][2],
                     mb_recordings[a[2]][3],
                     mb_recordings[a[2]][4],

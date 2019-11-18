@@ -61,6 +61,7 @@ SELECT_RECORDING_PAIRS_QUERY = '''
     GROUP BY rpr.id, ac.id, rl.gid, artist_credit_name, r.gid, r.name, a.gid, release_name
     ORDER BY ac.id, rpr.id
 '''
+#     WHERE left(lower(ac.name), 4) = 'guns'
 
 CREATE_RECORDING_PAIRS_TABLE_QUERY = '''
     CREATE TABLE musicbrainz.recording_artist_credit_pairs (
@@ -68,6 +69,7 @@ CREATE_RECORDING_PAIRS_TABLE_QUERY = '''
         recording_mbid            UUID NOT NULL, 
         artist_credit_name        TEXT NOT NULL,
         artist_mbids              UUID[] NOT NULL,
+        artist_credit_id          INTEGER NOT NULL,
         release_name              TEXT NOT NULL,
         release_mbid              UUID NOT NULL
     )
@@ -221,7 +223,7 @@ def fetch_recording_pairs():
                                 rows = []
 
                         if row[0] not in artist_recordings:
-                            artist_recordings[row[0]] = (row[0], row[1], row[2], row[3], row[4], row[5])
+                            artist_recordings[row[0]] = (row[0], row[1], row[2], row[3], int(row[6]), row[4], row[5])
 
                         last_ac_mbid = row[6]
 
