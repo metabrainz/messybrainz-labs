@@ -22,7 +22,7 @@ SELECT_COMBINED_QUERY = """
 def dump_mapping(table, filename, query):
 
     count = 0
-    with bz2.open(filename, "w") as f:
+    with bz2.open(filename, "wt") as f:
         with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
             with conn.cursor() as curs:
                 print("run query")
@@ -33,8 +33,12 @@ def dump_mapping(table, filename, query):
                     if not data:
                         break
 
-                    artists = data[3][1:-1].split(",")
-                    f.write(bytes(ujson.dumps((data[0], data[1], data[2], artists, data[4])) + "\n", "utf-8"))
+                    f.write(ujson.dumps({ 
+                        "msb_recording_msid" : data[0], 
+                        "mb_recording_gid" : data[1], 
+                        "msb_artist_msid" : data[2], 
+                        "mb_artist_gids" : data[3][1:-1].split(","),
+                        "mb_artist_credit_id" : int(data[4]) }) + "\n")
                     count += 1
 
                     if count % 1000000 == 0:

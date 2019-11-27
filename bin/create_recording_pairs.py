@@ -47,7 +47,7 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = r
 
 SELECT_RECORDING_PAIRS_QUERY = '''
     SELECT r.name as recording_name, r.gid as recording_mbid, 
-           ac.name as artist_credit_name, array_agg(a.gid) as artist_mbids,
+           ac.name as artist_credit_name, array_agg(DISTINCT a.gid) as artist_mbids,
            rl.name as release_name, rl.gid as release_mbid,
            ac.id, rpr.id
       FROM recording r
