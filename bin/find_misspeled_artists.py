@@ -14,6 +14,7 @@ from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from psycopg2.extras import execute_values, register_uuid
 from Levenshtein import distance
+from operator import itemgetter
 
 
 # TODO: 
@@ -68,27 +69,29 @@ def process_mapping_rows(rows, artist_names):
         if row['recording_mbid']:
             if not row['recording_mbid'] in targets:
                 targets[row['recording_mbid']] = row
+            try:
+                artist_names[row["artist_credit_id"]].add(row['artist_name'])
+            except KeyError:
+                artist_names[row["artist_credit_id"]] = set()
+                artist_names[row["artist_credit_id"]].add(row['artist_name'])
         else:
             candidates.append(row)
 
-        try:
-            artist_names["artist_credit_id"].append(row['artist_name'])
-        except KeyError:
-            artist_names["artist_credit_id"] = [ row['artist_name'] ]
 
     targets = targets.values()
     if not len(targets):
-        for candidate in candidates:
-            print("  X", candidate)
-        if len(candidates):
-            print()
+        pass
+#        for candidate in candidates:
+#            print("  X", candidate)
+#        if len(candidates):
+#            print()
     else:
-        for target in targets:
-            print("===", target)
-        for candidate in candidates:
-            print("CCC", candidate)
-        if len(candidates) or len(targets):
-            print()
+#        for target in targets:
+#            print("===", target)
+#        for candidate in candidates:
+#            print("CCC", candidate)
+#        if len(candidates) or len(targets):
+#            print()
 
         if len(targets) == 1 and len(candidates):
             new_matches += len(candidates)
@@ -122,7 +125,7 @@ def find_mispelings(edit_distance_threshold):
                     new_matches += process_mapping_rows(rows, artist_names)
                     rows = []
 
-                print("R '%s' - '%s' mbid: %s" % (row['recording_name'], row['artist_name'], row['recording_mbid']))
+#                print("R '%s' - '%s' mbid: %s" % (row['recording_name'], row['artist_name'], row['recording_mbid']))
                 rows.append(row)
 #                print("'%s' ~ '%s' = %d '%s' ~ '%s' = %d" % (row['recording_name'], last_recording, d_recording, \
 #                    row['artist_name'], last_artist, d_artist))
@@ -130,6 +133,16 @@ def find_mispelings(edit_distance_threshold):
                 last_artist = row['artist_name']
     print()
     print("%s new matches found." % new_matches)
+
+    hist = {}
+    for key in artist_names.keys():
+        hist[key] = len(artist_names[key])
+
+    for key in sorted(hist.items(), key=lambda kv: kv[1], reverse=True):
+        if len(artist_names[key[0]]) == 1:
+            continue
+        print("%d: " % len(artist_names[key[0]]), artist_names[key[0]])
+
     stats["completed"] = datetime.datetime.utcnow().isoformat()
 
     with open("mispeling-stats.json", "w") as f:
