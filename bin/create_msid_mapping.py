@@ -19,6 +19,7 @@ REMOVE_NON_WORD_CHARS = True
 
 # The name of the script to be saved in the source field.
 SOURCE_NAME = "exact"
+NO_PARENS_SOURCE_NAME = "noparens"
 
 SELECT_MSB_RECORDINGS_QUERY = '''
          SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
@@ -111,7 +112,6 @@ def calculate_msid_mapping():
     mb_recordings = []
 
     recording_mapping = {}
-    artist_mapping = {}
 
     print("load MSB recordings")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
@@ -124,12 +124,16 @@ def calculate_msid_mapping():
 
                 artist = msb_row[0]
                 recording = msb_row[2]
+                no_paren_rec = recording[:recording.find("("):].strip()
                 release = msb_row[4] or ""
                 if REMOVE_NON_WORD_CHARS:
                     artist = re.sub(r'\W+', '', artist)
                     recording = re.sub(r'\W+', '', recording)
+                    no_paren_rec = re.sub(r'\W+', '', no_paren_rec)
                     release = re.sub(r'\W+', '', release)
-                msb_recordings.append((artist, msb_row[1], recording, msb_row[3], release, msb_row[5]))
+                msb_recordings.append((artist, msb_row[1], recording, msb_row[3], release, msb_row[5], False))
+                if no_paren_rec != recording:
+                    msb_recordings.append((artist, msb_row[1], no_paren_rec, msb_row[3], release, msb_row[5], True))
 
     stats["msb_recording_count"] = len(msb_recordings)
 
@@ -199,14 +203,11 @@ def calculate_msid_mapping():
 
 #        print("= %s %s" % (pp, mb_row[3][0:15]))
 
-        k = "%s=%s" % (msb_row[1], mb_row[1])
-        try:
-            artist_mapping[k][0] += 1
-        except KeyError:
-            artist_mapping[k] = [ 1, msb_recording_index[msb_index], mb_recording_index[mb_index] ]
-
-
-        k = "%s=%s" % (msb_row[3], mb_row[3])
+        # Add a mapping entry, being careful to distinguish a normal match from a non paren match
+        if not msb_row[6]:
+            k = "%s=%s" % (msb_row[3], mb_row[3])
+        else:
+            k = "%s=%s~" % (msb_row[3], mb_row[3])
         try:
             recording_mapping[k][0] += 1
         except KeyError:
@@ -214,12 +215,28 @@ def calculate_msid_mapping():
 
         msb_row = None
 
-    create_table(conn)
+    print("sort mapping for post processing")
+    mapping_index = sorted(recording_mapping.keys())
+    duplicates = []
+    for i in enumerate(mapping_index):
+        try:
+            msb0, mb0 = mapping_index[i].split("=")
+            msb1, mb1 = mapping_index[i + 1].split("=")
+        except IndexError:
+            break
 
-    stats["artist_mapping_count"] = len(artist_mapping)
-    stats["recording_mapping_count"] = len(recording_mapping)
+        if msb0 == msb1 and mb1.endswith("~"):
+            duplicates.append(i + 1)
+
+    duplicates = sorted(duplicates, reverse==True)
+    for d in duplicates:
+        del recording_mapping[mapping_index[d]]
+
 
     print("save data to new table")
+    create_table(conn)
+    stats["recording_mapping_count"] = len(recording_mapping)
+
     top_index = []
     for k in recording_mapping:
         top_index.append((recording_mapping[k][0], k))
