@@ -28,9 +28,9 @@ SELECT_MSB_RECORDINGS_QUERY = '''
            FROM recording r
            JOIN recording_json rj ON r.data = rj.id
 LEFT OUTER JOIN release rl ON r.release = rl.gid
+WHERE      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)), 4) = 'guns'
 '''
 #WHERE left(rj.data->>'artist', 6) = 'Portis'
-#WHERE      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)), 4) = 'guns'
 #  AND      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)), 3) = 'ain'
 
 SELECT_MB_RECORDINGS_QUERY = '''
@@ -39,8 +39,8 @@ SELECT_MB_RECORDINGS_QUERY = '''
                     lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_mbid,
                     artist_credit_id
       FROM musicbrainz.recording_artist_credit_pairs 
+WHERE left(artist_credit_name, 4) = 'Guns'
 '''
-#WHERE left(artist_credit_name, 4) = 'Guns'
 
 CREATE_MAPPING_TABLE_QUERY = """
     CREATE TABLE musicbrainz.msd_mb_mapping (
