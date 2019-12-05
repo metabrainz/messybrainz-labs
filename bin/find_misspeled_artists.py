@@ -15,7 +15,10 @@ from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from psycopg2.extras import execute_values, register_uuid
 from Levenshtein import distance
 from operator import itemgetter
+from util import insert_mapping_rows
 
+# The name of the script to be saved in the source field.
+SOURCE_NAME = "fuzzy recording"
 
 # TODO: 
 #   Remove all non-word characters
@@ -51,18 +54,9 @@ SELECT_MISPELLED_ARTIST_QUERY_TEST = '''
    ORDER BY recording_name, artist_name, recording_mbid
 '''
 
-def insert_rows(curs, values):
-
-    query = "INSERT INTO musicbrainz.msd_mb_mapping VALUES %s"
-    try:
-        execute_values(curs, query, values, template=None)
-    except psycopg2.OperationalError as err:
-        print("failed to insert rows")
-
-
 def process_mapping_rows(rows, artist_names):
 
-    new_matches = 0
+    new_matches = []
     candidates = []
     targets = {}
     for row in rows:
@@ -93,8 +87,24 @@ def process_mapping_rows(rows, artist_names):
 #        if len(candidates) or len(targets):
 #            print()
 
+        assert(len(targets) == 1)
         if len(targets) == 1 and len(candidates):
-            new_matches += len(candidates)
+            rows.append((a[0],
+                msb_recordings[a[1]][0], 
+                msb_recordings[a[1]][1], 
+                msb_recordings[a[1]][2], 
+                msb_recordings[a[1]][3], 
+                msb_recordings[a[1]][4], 
+                msb_recordings[a[1]][5], 
+                mb_recordings[a[2]][0],
+                [ uuid.UUID(u) for u in mb_recordings[a[2]][1]],
+                mb_recordings[a[2]][6],
+                mb_recordings[a[2]][2],
+                mb_recordings[a[2]][3],
+                mb_recordings[a[2]][4],
+                mb_recordings[a[2]][5],
+                SOURCE_NAME
+                ))
 
     return new_matches
 
@@ -131,6 +141,9 @@ def find_mispelings(edit_distance_threshold):
 #                    row['artist_name'], last_artist, d_artist))
                 last_recording = row['recording_name']
                 last_artist = row['artist_name']
+
+                if len(new_matches) == 1000:
+                    insert_mapping_rows(
     print()
     print("%s new matches found." % new_matches)
 

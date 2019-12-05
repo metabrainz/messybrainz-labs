@@ -13,8 +13,12 @@ from sys import stdout
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from psycopg2.extras import execute_values, register_uuid
+from util import insert_mapping_rows
 
 REMOVE_NON_WORD_CHARS = True
+
+# The name of the script to be saved in the source field.
+SOURCE_NAME = "exact"
 
 SELECT_MSB_RECORDINGS_QUERY = '''
          SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
@@ -52,7 +56,8 @@ CREATE_MAPPING_TABLE_QUERY = """
         mb_recording_name   TEXT,
         mb_recording_gid    UUID,
         mb_release_name     TEXT,
-        mb_release_gid      UUID
+        mb_release_gid      UUID,
+        source              TEXT
     )
 """
 
@@ -94,13 +99,6 @@ def create_indexes(conn):
         print("creating indexes failed.")
 
 
-def insert_rows(curs, values):
-
-    query = "INSERT INTO musicbrainz.msd_mb_mapping VALUES %s"
-    try:
-        execute_values(curs, query, values, template=None)
-    except psycopg2.OperationalError as err:
-        print("failed to insert rows")
 
             
 def calculate_msid_mapping():
@@ -246,14 +244,15 @@ def calculate_msid_mapping():
                     mb_recordings[a[2]][2],
                     mb_recordings[a[2]][3],
                     mb_recordings[a[2]][4],
-                    mb_recordings[a[2]][5]
+                    mb_recordings[a[2]][5],
+                    SOURCE_NAME
                     ))
                 total += 1
                 if len(rows) == 1000:
-                    insert_rows(curs, rows)
+                    insert_mapping_rows(curs, rows)
                     rows = []
 
-            insert_rows(curs, rows)
+            insert_mapping_rows(curs, rows)
             conn.commit()
 
             stats['msid_mbid_mapping_count'] = total
