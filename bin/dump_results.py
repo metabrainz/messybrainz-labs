@@ -13,10 +13,10 @@ NUM_LEVELS = 3
 
 SELECT_QUERY = """
     SELECT DISTINCT msb_artist_name, msb_artist_msid, msb_recording_name, msb_recording_msid, msb_release_name,  msb_release_msid,   
-                    mb_artist_name, mb_artist_gids, mb_recording_name, mb_recording_gid, mb_release_name, mb_release_gid 
+                    mb_artist_name, mb_artist_gids, mb_recording_name, mb_recording_gid, mb_release_name, mb_release_gid, source
       FROM musicbrainz.msd_mb_mapping
   ORDER BY msb_recording_name, msb_artist_name, msb_release_name, mb_artist_name, mb_recording_name, mb_release_name,
-           msb_artist_msid, msb_recording_msid, msb_release_msid, mb_artist_gids, mb_recording_gid, mb_release_gid
+           msb_artist_msid, msb_recording_msid, msb_release_msid, mb_artist_gids, mb_recording_gid, mb_release_gid, source
 """;
 
 def dump_artists_to_html():
@@ -89,6 +89,7 @@ def output_line(f, data, count):
     f.write('<td><a title="%s" href="https://musicbrainz.org/release/%s">%s</a></td>' % (data['mb_release_id'], data['mb_release_id'], data['mb_release_name']))
     f.write('<td title="%s">%s</td>' % (data['mb_recording_id'], data['mb_recording_id'][0:6]))
     f.write('<td title="%s">%s</td>' % (data['mb_release_id'], data['mb_release_id'][0:6]))
+    f.write('<td>%s</td>' % data['source'])
     f.write('</tr>\n')
 
 
@@ -116,7 +117,7 @@ def dump_recordings_to_html():
                 total_count += 1
                 row = {}
                 row['msb_artist_name'], row['msb_artist_id'], row['msb_recording_name'], row['msb_recording_id'], row['msb_release_name'], row['msb_release_id'], \
-                    row['mb_artist_name'], row['mb_artist_ids'], row['mb_recording_name'], row['mb_recording_id'], row['mb_release_name'], row['mb_release_id']= data
+                    row['mb_artist_name'], row['mb_artist_ids'], row['mb_recording_name'], row['mb_recording_id'], row['mb_release_name'], row['mb_release_id'], row['source'] = data
 
                 category = ""
 
@@ -216,7 +217,7 @@ def write_indexes(level, categories, dest_dir, pair_stats, mapping_stats):
         stats += "</table>"
         stats += "<h3>Mapping stats</h3><table>"
         mapping_stats["MSID mapping coverage"] = "%.1f%%" % (100 * int(mapping_stats["msid_mbid_mapping_count"]) / float(mapping_stats["msb_recording_count"]))
-        for key in ("started", "artist_mapping_count", "recording_mapping_count", "msid_mbid_mapping_count", "msb_recording_count", 
+        for key in ("started", "recording_mapping_count", "msid_mbid_mapping_count", "msb_recording_count", 
             "MSID mapping coverage", "git commit hash", "completed"):
             try:    
                 stats += "<tr><td>%s</td><td>%s</td></tr>" % (key, '{:,}'.format(int(mapping_stats[key])))

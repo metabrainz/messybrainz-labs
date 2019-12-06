@@ -1,7 +1,5 @@
 import csv
 import psycopg2
-from nose.tools import assert_equals
-
 
 TEST_MAPPING_QUERY = '''
     SELECT m.mb_recording_gid
@@ -40,3 +38,6 @@ def test_mapping():
                     print("'%s' '%s' ok" % (rdata[0], rdata[1]))
 
                 assert_equals(row[0], rdata[2])
+
+if __name__ == "__main__":
+    test_mapping()

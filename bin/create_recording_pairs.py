@@ -13,10 +13,23 @@ from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 
 BATCH_SIZE = 5000
 
+foo = """
+    SELECT rg.name, rg.type, rgst.name
+      FROM musicbrainz.release_group rg 
+JOIN musicbrainz.artist_credit ac ON rg.artist_credit = ac.id
+JOIN musicbrainz.release_group_primary_type rgpt ON rg.type = rgpt.id   
+FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
+FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
+     WHERE rg.artist_credit != 1 
+       AND ac.id = 1160983
+ORDER BY rg.name
+"""
+
 # This query will fetch all release groups for single artist release groups and order them
 # so that early digital albums are preferred.
 SELECT_RELEASES_QUERY_TESTING = '''
-    SELECT ac.name, rg.id as rg, r.id, r.name, rgpt.name as pri_type, rgstj.release_group as sec_type, mf.name as format, date_year as year
+    SELECT ac.name as ac_name, ac.id as ac_id , rg.id as rg_id, r.id as rel_id, r.name as r_name, rg.type as rg_type, 
+           rgpt.name as pri_type, rgst.name as sec_type, mf.name as format, date_year as year
       FROM musicbrainz.release_group rg 
       JOIN musicbrainz.release r ON rg.id = r.release_group 
       JOIN musicbrainz.release_country rc ON rc.release = r.id 
@@ -26,9 +39,13 @@ SELECT_RELEASES_QUERY_TESTING = '''
 JOIN musicbrainz.artist_credit ac ON rg.artist_credit = ac.id
 JOIN musicbrainz.release_group_primary_type rgpt ON rg.type = rgpt.id   
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
+FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
      WHERE rg.artist_credit != 1 
-   ORDER BY rg.artist_credit, rg.type, sec_type desc, rg.name, fs.sort, date_year, date_month, date_day, country
+       AND ac.id = 1160983
+   ORDER BY rg.artist_credit, rg.type, sec_type desc , rg.name, fs.sort, date_year, date_month, date_day, country
 '''
+
+# San Miguel: ORDER BY rg.artist_credit, rg.type, sec_type desc, rg.name, fs.sort, date_year, date_month, date_day, country
 
 SELECT_RELEASES_QUERY = '''
 INSERT INTO musicbrainz.recording_pair_releases (release)
@@ -40,9 +57,11 @@ INSERT INTO musicbrainz.recording_pair_releases (release)
        JOIN musicbrainz.medium_format mf ON m.format = mf.id 
        JOIN musicbrainz.format_sort fs ON mf.id = fs.format
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
+FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
       WHERE rg.artist_credit != 1 
-   ORDER BY rg.artist_credit, rg.type, rgstj.release_group desc, fs.sort, date_year, date_month, date_day, country, rg.name
+   ORDER BY rg.artist_credit, rg.type, rgst.id desc, fs.sort, date_year, date_month, date_day, country, rg.name
 '''
+# TODO: Should the above be sorted by rg.type or rg pt?
 #LIMIT 1000
 
 SELECT_RECORDING_PAIRS_QUERY = '''

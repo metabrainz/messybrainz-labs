@@ -5,17 +5,18 @@ import pprint
 import psycopg2
 import operator
 import ujson
-import uuid
+from uuid import UUID
 import datetime
 import subprocess
 import re
+import gc
 from sys import stdout
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from psycopg2.extras import execute_values, register_uuid
-from util import insert_mapping_rows
+from utils import insert_mapping_rows
 
-REMOVE_NON_WORD_CHARS = True
+REMOVE_NON_WORD_CHARS = False
 
 # The name of the script to be saved in the source field.
 SOURCE_NAME = "exact"
@@ -76,7 +77,6 @@ def create_table(conn):
     with conn.cursor() as curs:
         while True:
             try:
-                print("create table")
                 curs.execute(CREATE_MAPPING_TABLE_QUERY)
                 conn.commit() 
                 break
@@ -99,21 +99,11 @@ def create_indexes(conn):
         conn.rollback()
         print("creating indexes failed.")
 
-
-
             
-def calculate_msid_mapping():
-
-    stats = {}
-    stats["started"] = datetime.datetime.utcnow().isoformat()
-    stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
+def load_MSB_recordings(stats):
 
     msb_recordings = []
-    mb_recordings = []
 
-    recording_mapping = {}
-
-    print("load MSB recordings")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             curs.execute(SELECT_MSB_RECORDINGS_QUERY)
@@ -123,25 +113,38 @@ def calculate_msid_mapping():
                     break
 
                 artist = msb_row[0]
+                artist_msid = msb_row[1]
                 recording = msb_row[2]
-                no_paren_rec = recording[:recording.find("("):].strip()
+                recording_msid = msb_row[3]
                 release = msb_row[4] or ""
+                release_msid = msb_row[5] or None
+                    
                 if REMOVE_NON_WORD_CHARS:
                     artist = re.sub(r'\W+', '', artist)
                     recording = re.sub(r'\W+', '', recording)
-                    no_paren_rec = re.sub(r'\W+', '', no_paren_rec)
                     release = re.sub(r'\W+', '', release)
-                msb_recordings.append((artist, msb_row[1], recording, msb_row[3], release, msb_row[5], False))
-                if no_paren_rec != recording:
-                    msb_recordings.append((artist, msb_row[1], no_paren_rec, msb_row[3], release, msb_row[5], True))
+
+                msb_recordings.append({ 
+                    "artist_name" : artist,
+                    "artist_msid" : artist_msid,
+                    "recording_name" : recording,
+                    "recording_msid" : recording_msid,
+                    "release_name" : release,
+                    "release_msid" : release_msid
+                })
 
     stats["msb_recording_count"] = len(msb_recordings)
 
     print("sort MSB recordings (%d items)" % (len(msb_recordings)))
     msb_recording_index = list(range(len(msb_recordings)))
-    msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec][0], msb_recordings[rec][2]))
+    msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
 
-    print("load MB recordings")
+    return (msb_recordings, msb_recording_index)
+
+
+def load_MB_recordings(stats):
+
+    mb_recordings = []
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             curs.execute(SELECT_MB_RECORDINGS_QUERY)
@@ -151,20 +154,40 @@ def calculate_msid_mapping():
                     break
 
                 artist = mb_row[0]
+                artist_mbids = mb_row[1][1:-1].split(",")
                 recording = mb_row[2]
+                recording_mbid = mb_row[3]
                 release = mb_row[4]
+                release_mbid = mb_row[5]
                 if REMOVE_NON_WORD_CHARS:
                     artist = re.sub(r'\W+', '', artist)
                     recording = re.sub(r'\W+', '', recording)
                     release = re.sub(r'\W+', '', release)
-                mb_recordings.append((artist, mb_row[1][1:-1].split(","), recording, mb_row[3], release, mb_row[5], mb_row[6]))
+
+                mb_recordings.append({ 
+                    "artist_name" : artist,
+                    "artist_mbids" : artist_mbids,
+                    "recording_name" : recording,
+                    "recording_mbid" : recording_mbid,
+                    "release_name" : release,
+                    "release_mbid" : release_mbid,
+                    "artist_credit_id" : mb_row[6]
+                })
 
     print("sort MB recordings (%d items)" % (len(mb_recordings)))
     mb_recording_index = list(range(len(mb_recordings)))
-    mb_recording_index = sorted(mb_recording_index, key=lambda rec: (mb_recordings[rec][0], mb_recordings[rec][2]))
+    mb_recording_index = sorted(mb_recording_index, key=lambda rec: (mb_recordings[rec]["artist_name"], mb_recordings[rec]["recording_name"]))
 
+    return (mb_recordings, mb_recording_index)
+
+
+def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, source):
+
+    recording_mapping = {}
     mb_index = -1
     msb_index = -1
+    msb_row = None
+    mb_row = None
     while True:
         if not msb_row:
             try:
@@ -180,34 +203,31 @@ def calculate_msid_mapping():
             except IndexError:
                 break
 
-        pp = "%-37s %-37s = %-27s %-37s %s" % (msb_row[0][0:25], msb_row[2][0:25], mb_row[0][0:25], mb_row[2][0:25], msb_row[3][0:8])
-        if msb_row[0] > mb_row[0]:
+#        pp = "%-37s %-37s = %-27s %-37s %s" % (msb_row["artist_name"][0:25], msb_row["recording_name"][0:25], 
+#            mb_row["artist_name"`][0:25], mb_row["recording_name"][0:25], msb_row["recording_msid"][0:8])
+        if msb_row["artist_name"] > mb_row["artist_name"]:
 #            print("> %s" % pp)
             mb_row = None
             continue
 
-        if msb_row[0] < mb_row[0]:
+        if msb_row["artist_name"] < mb_row["artist_name"]:
 #            print("< %s" % pp)
             msb_row = None
             continue
 
-        if msb_row[2] > mb_row[2]:
+        if msb_row["recording_name"] > mb_row["recording_name"]:
 #            print("} %s" % pp)
             mb_row = None
             continue
 
-        if msb_row[2] < mb_row[2]:
+        if msb_row["recording_name"] < mb_row["recording_name"]:
 #            print("{ %s" % pp)
             msb_row = None
             continue
 
-#        print("= %s %s" % (pp, mb_row[3][0:15]))
+#        print("= %s %s" % (pp, mb_row["recording_mbid"][0:15]))
 
-        # Add a mapping entry, being careful to distinguish a normal match from a non paren match
-        if not msb_row[6]:
-            k = "%s=%s" % (msb_row[3], mb_row[3])
-        else:
-            k = "%s=%s~" % (msb_row[3], mb_row[3])
+        k = "%s=%s" % (msb_row["recording_msid"], mb_row["recording_mbid"])
         try:
             recording_mapping[k][0] += 1
         except KeyError:
@@ -215,28 +235,9 @@ def calculate_msid_mapping():
 
         msb_row = None
 
-    print("sort mapping for post processing")
-    mapping_index = sorted(recording_mapping.keys())
-    duplicates = []
-    for i in enumerate(mapping_index):
-        try:
-            msb0, mb0 = mapping_index[i].split("=")
-            msb1, mb1 = mapping_index[i + 1].split("=")
-        except IndexError:
-            break
-
-        if msb0 == msb1 and mb1.endswith("~"):
-            duplicates.append(i + 1)
-
-    duplicates = sorted(duplicates, reverse==True)
-    for d in duplicates:
-        del recording_mapping[mapping_index[d]]
-
-
-    print("save data to new table")
-    create_table(conn)
     stats["recording_mapping_count"] = len(recording_mapping)
 
+    print("Calculate histogram")
     top_index = []
     for k in recording_mapping:
         top_index.append((recording_mapping[k][0], k))
@@ -249,20 +250,21 @@ def calculate_msid_mapping():
             for count, k in sorted(top_index, reverse=True):
                 a = recording_mapping[k]
                 rows.append((a[0],
-                    msb_recordings[a[1]][0], 
-                    msb_recordings[a[1]][1], 
-                    msb_recordings[a[1]][2], 
-                    msb_recordings[a[1]][3], 
-                    msb_recordings[a[1]][4], 
-                    msb_recordings[a[1]][5], 
-                    mb_recordings[a[2]][0],
-                    [ uuid.UUID(u) for u in mb_recordings[a[2]][1]],
-                    mb_recordings[a[2]][6],
-                    mb_recordings[a[2]][2],
-                    mb_recordings[a[2]][3],
-                    mb_recordings[a[2]][4],
-                    mb_recordings[a[2]][5],
-                    SOURCE_NAME
+                    msb_recordings[a[1]]["artist_name"], 
+                    msb_recordings[a[1]]["artist_msid"], 
+                    msb_recordings[a[1]]["recording_name"], 
+                    msb_recordings[a[1]]["recording_msid"], 
+                    msb_recordings[a[1]]["release_name"], 
+                    msb_recordings[a[1]]["release_msid"], 
+
+                    mb_recordings[a[2]]["artist_name"],
+                    [ UUID(mbid) for mbid in mb_recordings[a[2]]["artist_mbids"] ],
+                    mb_recordings[a[2]]["artist_credit_id"],
+                    mb_recordings[a[2]]["recording_name"],
+                    mb_recordings[a[2]]["recording_mbid"],
+                    mb_recordings[a[2]]["release_name"],
+                    mb_recordings[a[2]]["release_mbid"],
+                    source
                     ))
                 total += 1
                 if len(rows) == 1000:
@@ -274,10 +276,41 @@ def calculate_msid_mapping():
 
             stats['msid_mbid_mapping_count'] = total
 
-            print("create indexes")
-            create_indexes(conn)
 
     stats["completed"] = datetime.datetime.utcnow().isoformat()
+
+
+#                no_paren_rec = recording[:recording.find("("):].strip()
+#                if no_paren_rec != recording:
+#                    msb_recordings.append((artist, artist_mbid, no_paren_rec, recording_mbid, release, release_mbid, recording))
+#                    no_paren_recordings += 1
+#                    no_paren_rec = re.sub(r'\W+', '', no_paren_rec)
+
+def calculate_msid_mapping():
+
+    stats = {}
+    stats["started"] = datetime.datetime.utcnow().isoformat()
+    stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
+    no_paren_recordings = 0
+
+    print("Load MSB recordings")
+    msb_recordings, msb_recording_index = load_MSB_recordings(stats)
+
+    print("Load MB recordings")
+    mb_recordings, mb_recording_index = load_MB_recordings(stats)
+
+    duplicates = None
+    gc.collect()
+
+    print("save data to new table")
+    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+        create_table(conn)
+
+    match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, SOURCE_NAME)
+
+    print("create indexes")
+    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+        create_indexes(conn)
 
     with open("mapping-stats.json", "w") as f:
         f.write(ujson.dumps(stats, indent=2) + "\n")
