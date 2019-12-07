@@ -13,63 +13,11 @@ NUM_LEVELS = 3
 
 SELECT_QUERY = """
     SELECT DISTINCT msb_artist_name, msb_artist_msid, msb_recording_name, msb_recording_msid, msb_release_name,  msb_release_msid,   
-                    mb_artist_name, mb_artist_gids, mb_recording_name, mb_recording_gid, mb_release_name, mb_release_gid, source
+                    mb_artist_name, mb_artist_credit_id, mb_recording_name, mb_recording_id, mb_release_name, mb_release_id, source
       FROM musicbrainz.msd_mb_mapping
   ORDER BY msb_recording_name, msb_artist_name, msb_release_name, mb_artist_name, mb_recording_name, mb_release_name,
-           msb_artist_msid, msb_recording_msid, msb_release_msid, mb_artist_gids, mb_recording_gid, mb_release_gid, source
+           msb_artist_msid, msb_recording_msid, msb_release_msid, mb_artist_credit_id, mb_recording_id, mb_release_id, source
 """;
-
-def dump_artists_to_html():
-
-    total_artists = 0
-    cats = "0123456789abcdefghijklmnopqrstuvwxyz"
-    categories = {}
-    categories['others'] = []
-    for cat in cats:
-        categories[cat] = []
-
-    print("load artists")
-    with open("artists.json", "r") as j:
-        while True:
-            line = j.readline()
-            if not line:
-                break
-
-            total_artists += 1
-            count, msid, msb_artist, mbids, mb_artist = ujson.loads(line)
-            if msb_artist[0] in cats:
-                categories[msb_artist[0]].append((count, msid, msb_artist, mbids, mb_artist))
-            else:
-                categories['others'].append((count, msid, msb_artist, mbids, mb_artist))
-
-
-    print("output artists")
-    try:
-        os.makedirs("html/artist")
-    except FileExistsError:
-        pass
-
-    for cat in categories.keys():
-        with open("html/artist/%s.html" % cat, "w") as f:
-            f.write('<html><head><meta charset="UTF-8"><title>%s artists</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/light.min.css"></link></head><body>\n' % cat)
-            f.write("<h1>%s artists</h1>" % cat)
-            f.write("<p>count: %d</p>" % total_artists)
-            f.write("<table><tr><th>count</th><th>msid</th><th>MsB artist</th><th>MB artist</th></tr>\n")
-
-            for count, msid, msb_artist, mbids, mb_artist in sorted(categories[cat], key=itemgetter(2)):
-                f.write('<tr><td>%5d</td><td>%s</td><td>%s</td><td>' % (count, msid, msb_artist))
-                f.write('<a href="https://musicbrainz.org/artist/%s">%s</a> ' % (mbids[0], mb_artist))
-                for i, mbid in enumerate(mbids[1:]):
-                    f.write('<a href="https://musicbrainz.org/artist/%s">%s</a> ' % ((mbid, "additional artist #%d" % i)))
-                f.write('</td></tr>\n')
-            f.write("</table></body></html>\n")
-
-    with open("html/artist/index.html", "w") as f:
-        f.write('<html><head><meta charset="UTF-8"><title>artist matches</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/light.min.css"></link></head><body>\n')
-        f.write("<h1>artist matches</h1>")
-        for cat in categories.keys():
-            f.write('<a href="%s.html">%s</a> ' % (cat, cat))
-        f.write("<p></body></html>\n")
 
 
 def output_line(f, data, count):
@@ -77,18 +25,13 @@ def output_line(f, data, count):
     data['mb_artist_ids']= [ id for id in data['mb_artist_ids'][1:-1].split(',') ] 
     f.write('<tr>')
     f.write('<td>%d</td>' % count)
-    f.write('<td title="%s">%s</td>' % (data['msb_recording_id'], data['msb_recording_name']))
-    f.write('<td title="%s">%s</td>' % (data['msb_artist_id'], data['msb_artist_name']))
-    f.write('<td>')
-    f.write('<a title="%s" href="https://musicbrainz.org/artist/%s">%s</a> ' % (data['mb_artist_ids'][0], data['mb_artist_ids'][0], data['mb_artist_name']))
-    for i, mbid in enumerate(data['mb_artist_ids'][1:]):
-        f.write('<a title="%s" href="https://musicbrainz.org/artist/%s">%s</a> ' % ((mbid, mbid, "id #%d" % i)))
-
-    f.write('</td>')
-    f.write('<td><a title="%s" href="https://musicbrainz.org/recording/%s">%s</a></td>' % (data['mb_recording_id'], data['mb_recording_id'], data['mb_recording_name']))
-    f.write('<td><a title="%s" href="https://musicbrainz.org/release/%s">%s</a></td>' % (data['mb_release_id'], data['mb_release_id'], data['mb_release_name']))
-    f.write('<td title="%s">%s</td>' % (data['mb_recording_id'], data['mb_recording_id'][0:6]))
-    f.write('<td title="%s">%s</td>' % (data['mb_release_id'], data['mb_release_id'][0:6]))
+    f.write('<td title="%d">%s</td>' % (data['msb_recording_id'], data['msb_recording_name']))
+    f.write('<td title="%d">%s</td>' % (data['msb_artist_id'], data['msb_artist_name']))
+    f.write('<td>%d</td>' % data['mb_artist_credit_id'])
+    f.write('<td><a title="%d" href="https://musicbrainz.org/recording/%s">%s</a></td>' % (data['mb_recording_id'], data['mb_recording_id'], data['mb_recording_name']))
+    f.write('<td><a title="%d" href="https://musicbrainz.org/release/%s">%s</a></td>' % (data['mb_release_id'], data['mb_release_id'], data['mb_release_name']))
+    f.write('<td title="%d">%s</td>' % (data['mb_recording_id'], data['mb_recording_id'][0:6]))
+    f.write('<td title="%d">%s</td>' % (data['mb_release_id'], data['mb_release_id'][0:6]))
     f.write('<td>%s</td>' % data['source'])
     f.write('</tr>\n')
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import sys
+import os
 import pprint
 import psycopg2
 import operator
 import ujson
+import psutil
 from uuid import UUID
 import datetime
 import subprocess
@@ -35,10 +37,9 @@ WHERE      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)
 #  AND      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)), 3) = 'ain'
 
 SELECT_MB_RECORDINGS_QUERY = '''
-    SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_mbids, 
-                    lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_mbid,
-                    lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_mbid,
-                    artist_credit_id
+    SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_credit_id,
+                    lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_id,
+                    lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_id
       FROM musicbrainz.recording_artist_credit_pairs 
 WHERE left(artist_credit_name, 4) = 'Guns'
 '''
@@ -53,12 +54,11 @@ CREATE_MAPPING_TABLE_QUERY = """
         msb_release_name    TEXT,
         msb_release_msid    UUID,
         mb_artist_name      TEXT,
-        mb_artist_gids      UUID[],
         mb_artist_credit_id INTEGER, 
         mb_recording_name   TEXT,
-        mb_recording_gid    UUID,
+        mb_recording_id     INTEGER,
         mb_release_name     TEXT,
-        mb_release_gid      UUID,
+        mb_release_id       INTEGER,
         source              TEXT
     )
 """
@@ -71,6 +71,11 @@ CREATE_MAPPING_INDEXES_QUERIES = [
     "CREATE INDEX msd_mb_mapping_msb_release_name_ndx ON musicbrainz.msd_mb_mapping(msb_release_name)",
     "CREATE INDEX msd_mb_mapping_msb_release_msid_ndx ON musicbrainz.msd_mb_mapping(msb_release_msid)",
 ]
+
+def mem_stats():
+    process = psutil.Process(os.getpid())
+    return "%d MB" % (process.memory_info().rss / 1024 / 1024)
+
 
 def create_table(conn):
 
@@ -104,6 +109,7 @@ def load_MSB_recordings(stats):
 
     msb_recordings = []
 
+    count = 0
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             curs.execute(SELECT_MSB_RECORDINGS_QUERY)
@@ -132,10 +138,13 @@ def load_MSB_recordings(stats):
                     "release_name" : release,
                     "release_msid" : release_msid
                 })
+                count += 1
+                if count % 1000000 == 0:
+                    print("load MSB %d, %s" % (count, mem_stats()))
 
     stats["msb_recording_count"] = len(msb_recordings)
 
-    print("sort MSB recordings (%d items)" % (len(msb_recordings)))
+    print("sort MSB recordings %d items, %s" % (len(msb_recordings), mem_stats()))
     msb_recording_index = list(range(len(msb_recordings)))
     msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
 
@@ -145,6 +154,7 @@ def load_MSB_recordings(stats):
 def load_MB_recordings(stats):
 
     mb_recordings = []
+    count = 0
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             curs.execute(SELECT_MB_RECORDINGS_QUERY)
@@ -154,11 +164,11 @@ def load_MB_recordings(stats):
                     break
 
                 artist = mb_row[0]
-                artist_mbids = mb_row[1][1:-1].split(",")
+                artist_credit_id = int(mb_row[1])
                 recording = mb_row[2]
-                recording_mbid = mb_row[3]
+                recording_id = int(mb_row[3])
                 release = mb_row[4]
-                release_mbid = mb_row[5]
+                release_id = int(mb_row[5])
                 if REMOVE_NON_WORD_CHARS:
                     artist = re.sub(r'\W+', '', artist)
                     recording = re.sub(r'\W+', '', recording)
@@ -166,15 +176,17 @@ def load_MB_recordings(stats):
 
                 mb_recordings.append({ 
                     "artist_name" : artist,
-                    "artist_mbids" : artist_mbids,
+                    "artist_credit_id" : artist_credit_id,
                     "recording_name" : recording,
-                    "recording_mbid" : recording_mbid,
+                    "recording_id" : recording_id,
                     "release_name" : release,
-                    "release_mbid" : release_mbid,
-                    "artist_credit_id" : mb_row[6]
+                    "release_id" : release_id,
                 })
+                count += 1
+                if count % 1000000 == 0:
+                    print("load MB %d, %s" % (count, mem_stats()))
 
-    print("sort MB recordings (%d items)" % (len(mb_recordings)))
+    print("sort MB recordings %d items, %s" % (len(mb_recordings), mem_stats()))
     mb_recording_index = list(range(len(mb_recordings)))
     mb_recording_index = sorted(mb_recording_index, key=lambda rec: (mb_recordings[rec]["artist_name"], mb_recordings[rec]["recording_name"]))
 
@@ -188,6 +200,7 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
     msb_index = -1
     msb_row = None
     mb_row = None
+    count  = 0
     while True:
         if not msb_row:
             try:
@@ -225,23 +238,27 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
             msb_row = None
             continue
 
-#        print("= %s %s" % (pp, mb_row["recording_mbid"][0:15]))
+#        print("= %s %s" % (pp, mb_row["recording_id"]))
 
-        k = "%s=%s" % (msb_row["recording_msid"], mb_row["recording_mbid"])
+        k = "%s=%s" % (msb_row["recording_msid"], mb_row["recording_id"])
         try:
             recording_mapping[k][0] += 1
         except KeyError:
             recording_mapping[k] = [ 1, msb_recording_index[msb_index], mb_recording_index[mb_index] ]
 
+        count += 1
         msb_row = None
+        if count % 1000000 == 0:
+            print("%d matches, %s" % (count, mem_stats()))
 
     stats["recording_mapping_count"] = len(recording_mapping)
 
-    print("Calculate histogram")
+    print("Calculate listen count histogram")
     top_index = []
     for k in recording_mapping:
         top_index.append((recording_mapping[k][0], k))
 
+    print("write records to disk")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             register_uuid(curs)
@@ -249,7 +266,7 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
             total = 0
             for count, k in sorted(top_index, reverse=True):
                 a = recording_mapping[k]
-                rows.append((a[0],
+                row = (a[0],
                     msb_recordings[a[1]]["artist_name"], 
                     msb_recordings[a[1]]["artist_msid"], 
                     msb_recordings[a[1]]["recording_name"], 
@@ -258,23 +275,27 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
                     msb_recordings[a[1]]["release_msid"], 
 
                     mb_recordings[a[2]]["artist_name"],
-                    [ UUID(mbid) for mbid in mb_recordings[a[2]]["artist_mbids"] ],
                     mb_recordings[a[2]]["artist_credit_id"],
                     mb_recordings[a[2]]["recording_name"],
-                    mb_recordings[a[2]]["recording_mbid"],
+                    mb_recordings[a[2]]["recording_id"],
                     mb_recordings[a[2]]["release_name"],
-                    mb_recordings[a[2]]["release_mbid"],
+                    mb_recordings[a[2]]["release_id"],
                     source
-                    ))
+                    )
                 total += 1
-                if len(rows) == 1000:
+                if len(rows) == 2000:
                     insert_mapping_rows(curs, rows)
                     rows = []
 
+                if total % 1000000 == 0:
+                    print("wrote %d of %d, %s" % (total, len(recording_mapping), mem_stats()))
+                    conn.commit()
+
+            print("insert last mapping bits: %d" % len(rows))
             insert_mapping_rows(curs, rows)
             conn.commit()
 
-            stats['msid_mbid_mapping_count'] = total
+        stats['msid_mbid_mapping_count'] = total
 
 
     stats["completed"] = datetime.datetime.utcnow().isoformat()
@@ -291,7 +312,6 @@ def calculate_msid_mapping():
     stats = {}
     stats["started"] = datetime.datetime.utcnow().isoformat()
     stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
-    no_paren_recordings = 0
 
     print("Load MSB recordings")
     msb_recordings, msb_recording_index = load_MSB_recordings(stats)
@@ -299,14 +319,19 @@ def calculate_msid_mapping():
     print("Load MB recordings")
     mb_recordings, mb_recording_index = load_MB_recordings(stats)
 
-    duplicates = None
-    gc.collect()
-
-    print("save data to new table")
+    print("match recordings")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         create_table(conn)
 
     match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, SOURCE_NAME)
+
+    print("free memory, %s" % mem_stats())
+    msb_recordings = None
+    msb_recording_index = None
+    mb_recordings = None
+    mb_recording_index = None
+    gc.collect()
+    print("post gc, %s" % mem_stats())
 
     print("create indexes")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:

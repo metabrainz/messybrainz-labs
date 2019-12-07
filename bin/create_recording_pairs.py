@@ -13,18 +13,6 @@ from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 
 BATCH_SIZE = 5000
 
-foo = """
-    SELECT rg.name, rg.type, rgst.name
-      FROM musicbrainz.release_group rg 
-JOIN musicbrainz.artist_credit ac ON rg.artist_credit = ac.id
-JOIN musicbrainz.release_group_primary_type rgpt ON rg.type = rgpt.id   
-FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
-FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
-     WHERE rg.artist_credit != 1 
-       AND ac.id = 1160983
-ORDER BY rg.name
-"""
-
 # This query will fetch all release groups for single artist release groups and order them
 # so that early digital albums are preferred.
 SELECT_RELEASES_QUERY_TESTING = '''
@@ -42,10 +30,8 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = r
 FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
      WHERE rg.artist_credit != 1 
        AND ac.id = 1160983
-   ORDER BY rg.artist_credit, rg.type, sec_type desc , rg.name, fs.sort, date_year, date_month, date_day, country
+   ORDER BY rg.artist_credit, rg.type, sec_type desc , fs.sort, date_year, date_month, date_day, country, rg.name
 '''
-
-# San Miguel: ORDER BY rg.artist_credit, rg.type, sec_type desc, rg.name, fs.sort, date_year, date_month, date_day, country
 
 SELECT_RELEASES_QUERY = '''
 INSERT INTO musicbrainz.recording_pair_releases (release)
@@ -59,15 +45,15 @@ INSERT INTO musicbrainz.recording_pair_releases (release)
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
 FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
       WHERE rg.artist_credit != 1 
+       AND rg.artist_credit = 1160983
    ORDER BY rg.artist_credit, rg.type, rgst.id desc, fs.sort, date_year, date_month, date_day, country, rg.name
-'''
-# TODO: Should the above be sorted by rg.type or rg pt?
-#LIMIT 1000
 
-SELECT_RECORDING_PAIRS_QUERY = '''
-    SELECT r.name as recording_name, r.gid as recording_mbid, 
-           ac.name as artist_credit_name, array_agg(DISTINCT a.gid) as artist_mbids,
-           rl.name as release_name, rl.gid as release_mbid,
+'''
+
+test = ''' problaby ok to nuke soon
+    SELECT lower(musicbrainz.musicbrainz_unaccent(r.name)) as recording_name,
+           lower(musicbrainz.musicbrainz_unaccent(ac.name)) as artist_credit_name, array_agg(DISTINCT a.gid) as artist_mbids,
+           lower(musicbrainz.musicbrainz_unaccent(rl.name)) as release_name,
            ac.id, rpr.id
       FROM recording r
       JOIN artist_credit ac ON r.artist_credit = ac.id
@@ -78,19 +64,47 @@ SELECT_RECORDING_PAIRS_QUERY = '''
       JOIN release rl ON rl.id = m.release
       JOIN recording_pair_releases rpr ON rl.id = rpr.release
     GROUP BY rpr.id, ac.id, rl.gid, artist_credit_name, r.gid, r.name, a.gid, release_name
+    ORDER BY rpr.id, ac.id
+
+    SELECT lower(musicbrainz.musicbrainz_unaccent(r.name)) as recording_name,
+           lower(musicbrainz.musicbrainz_unaccent(ac.name)) as artist_credit_name,
+           lower(musicbrainz.musicbrainz_unaccent(rl.name)) as release_name,
+           ac.id, rpr.id
+      FROM recording r
+      JOIN artist_credit ac ON r.artist_credit = ac.id
+      JOIN artist_credit_name acn ON ac.id = acn.artist_credit
+      JOIN track t ON t.recording = r.id
+      JOIN medium m ON m.id = t.medium
+      JOIN release rl ON rl.id = m.release
+      JOIN recording_pair_releases rpr ON rl.id = rpr.release
+    GROUP BY rpr.id, ac.id, rl.gid, artist_credit_name, r.gid, r.name, release_name
+    ORDER BY rpr.id, ac.id
+'''
+
+SELECT_RECORDING_PAIRS_QUERY = '''
+    SELECT lower(musicbrainz.musicbrainz_unaccent(r.name)) as recording_name, r.id as recording_id, 
+           lower(musicbrainz.musicbrainz_unaccent(ac.name)) as artist_credit_name, ac.id as artist_credit_id,
+           lower(musicbrainz.musicbrainz_unaccent(rl.name)) as release_name, rl.id as release_id,
+           rpr.id
+      FROM recording r
+      JOIN artist_credit ac ON r.artist_credit = ac.id
+      JOIN artist_credit_name acn ON ac.id = acn.artist_credit
+      JOIN track t ON t.recording = r.id
+      JOIN medium m ON m.id = t.medium
+      JOIN release rl ON rl.id = m.release
+      JOIN recording_pair_releases rpr ON rl.id = rpr.release
+    GROUP BY rpr.id, ac.id, rl.id, artist_credit_name, r.id, r.name, release_name
     ORDER BY ac.id, rpr.id
 '''
-#     WHERE left(lower(ac.name), 4) = 'guns'
 
 CREATE_RECORDING_PAIRS_TABLE_QUERY = '''
     CREATE TABLE musicbrainz.recording_artist_credit_pairs (
         recording_name            TEXT NOT NULL,
-        recording_mbid            UUID NOT NULL, 
+        recording_id              INTEGER NOT NULL, 
         artist_credit_name        TEXT NOT NULL,
-        artist_mbids              UUID[] NOT NULL,
         artist_credit_id          INTEGER NOT NULL,
         release_name              TEXT NOT NULL,
-        release_mbid              UUID NOT NULL
+        release_id                INTEGER NOT NULL
     )
 '''
 
@@ -199,7 +213,7 @@ def fetch_recording_pairs():
     stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
 
     with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as mb_conn:
-        with mb_conn.cursor() as mb_curs:
+        with mb_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as mb_curs:
             with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as msb_conn:
 
                 # Create the dest table (perhaps dropping the old one first)
@@ -215,7 +229,7 @@ def fetch_recording_pairs():
                 with msb_conn.cursor() as msb_curs:
 
                     rows = []
-                    last_ac_mbid = None
+                    last_ac_id = None
                     artist_recordings = {}
                     count = 0
                     print("Run fetch recordings query")
@@ -226,10 +240,10 @@ def fetch_recording_pairs():
                         if not row:
                             break
 
-                        if not last_ac_mbid:
-                            last_ac_mbid = row[6]
+                        if not last_ac_id:
+                            last_ac_id = row['artist_credit_id']
 
-                        if row[6] != last_ac_mbid:
+                        if row['artist_credit_id'] != last_ac_id:
                             # insert the rows that made it
                             rows.extend(artist_recordings.values())
                             artist_recordings = {}
@@ -241,10 +255,11 @@ def fetch_recording_pairs():
                                 print("inserted %d rows." % count)
                                 rows = []
 
-                        if row[0] not in artist_recordings:
-                            artist_recordings[row[0]] = (row[0], row[1], row[2], row[3], int(row[6]), row[4], row[5])
+                        if row['recording_name'] not in artist_recordings:
+                            artist_recordings[row['recording_name']] = (row['recording_name'], row['recording_id'], 
+                                row['artist_credit_name'], row['artist_credit_id'], row['release_name'], row['release_id'])
 
-                        last_ac_mbid = row[6]
+                        last_ac_id = row['artist_credit_id']
 
 
                     rows.extend(artist_recordings.values())
