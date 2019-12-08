@@ -165,7 +165,11 @@ def create_temp_release_table(conn, stats):
 
     with conn.cursor() as curs:
         print("Run select releases query")
-        curs.execute(SELECT_RELEASES_QUERY)
+        if USE_MINIMAL_DATASET:
+            print("Using a minimal dataset!")
+            curs.execute(SELECT_RELEASES_QUERY % SELECT_RELEASES_QUERY_WHERE_CLAUSE)
+        else:
+            curs.execute(SELECT_RELEASES_QUERY % "")
         curs.execute(CREATE_RELEASES_ID_INDEX)
         curs.execute(CREATE_RELEASES_SORT_INDEX)
         curs.execute("SELECT COUNT(*) from musicbrainz.recording_pair_releases")
@@ -203,11 +207,7 @@ def fetch_recording_pairs():
                     artist_recordings = {}
                     count = 0
                     print("Run fetch recordings query")
-                    if USE_MINIMAL_DATASET:
-                        print("Using a minimal dataset!")
-                        mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY % SELECT_RELEASES_QUERY_WHERE_CLAUSE)
-                    else:
-                        mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY % "")
+                    mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY)
                     print("Fetch recordings and insert to MSB")
                     while True:
                         row = mb_curs.fetchone()

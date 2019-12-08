@@ -17,8 +17,7 @@ from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from psycopg2.extras import execute_values, register_uuid
 from utils import insert_mapping_rows
-
-REMOVE_NON_WORD_CHARS = False
+from settings import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS, SHOW_MATCHES
 
 # The name of the script to be saved in the source field.
 SOURCE_NAME = "exact"
@@ -31,17 +30,22 @@ SELECT_MSB_RECORDINGS_QUERY = '''
            FROM recording r
            JOIN recording_json rj ON r.data = rj.id
 LEFT OUTER JOIN release rl ON r.release = rl.gid
-WHERE      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)), 4) = 'guns'
+                %s
 '''
-#WHERE left(rj.data->>'artist', 6) = 'Portis'
-#  AND      left(lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)), 3) = 'ain'
+SELECT_MSB_RECORDINGS_QUERY_WHERE_CLAUSE = '''
+           JOIN artist_credit ac ON ac.gid = artist
+     WHERE ac.gid = '07a5af27-b0ff-41c8-84b1-a41f17b21418'
+'''
 
 SELECT_MB_RECORDINGS_QUERY = '''
     SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_credit_id,
                     lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_id,
                     lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_id
       FROM musicbrainz.recording_artist_credit_pairs 
-WHERE left(artist_credit_name, 4) = 'Guns'
+      %s
+'''
+SELECT_MB_RECORDINGS_QUERY_WHERE_CLAUSE = '''
+      WHERE artist_credit_id = 1160983
 '''
 
 CREATE_MAPPING_TABLE_QUERY = """
@@ -112,7 +116,10 @@ def load_MSB_recordings(stats):
     count = 0
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
-            curs.execute(SELECT_MSB_RECORDINGS_QUERY)
+            if USE_MINIMAL_DATASET:
+                curs.execute(SELECT_MSB_RECORDINGS_QUERY % SELECT_MSB_RECORDINGS_QUERY_WHERE_CLAUSE)
+            else:
+                curs.execute(SELECT_MSB_RECORDINGS_QUERY % "")
             while True:
                 msb_row = curs.fetchone()
                 if not msb_row:
@@ -157,7 +164,10 @@ def load_MB_recordings(stats):
     count = 0
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
-            curs.execute(SELECT_MB_RECORDINGS_QUERY)
+            if USE_MINIMAL_DATASET:
+                curs.execute(SELECT_MB_RECORDINGS_QUERY % SELECT_MB_RECORDINGS_QUERY_WHERE_CLAUSE)
+            else:
+                curs.execute(SELECT_MB_RECORDINGS_QUERY % "")
             while True:
                 mb_row = curs.fetchone()
                 if not mb_row:
@@ -216,29 +226,29 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
             except IndexError:
                 break
 
-#        pp = "%-37s %-37s = %-27s %-37s %s" % (msb_row["artist_name"][0:25], msb_row["recording_name"][0:25], 
-#            mb_row["artist_name"`][0:25], mb_row["recording_name"][0:25], msb_row["recording_msid"][0:8])
+        pp = "%-37s %-37s = %-27s %-37s %s" % (msb_row["artist_name"][0:25], msb_row["recording_name"][0:25], 
+            mb_row["artist_name"][0:25], mb_row["recording_name"][0:25], msb_row["recording_msid"][0:8])
         if msb_row["artist_name"] > mb_row["artist_name"]:
-#            print("> %s" % pp)
+            if SHOW_MATCHES: print("> %s" % pp)
             mb_row = None
             continue
 
         if msb_row["artist_name"] < mb_row["artist_name"]:
-#            print("< %s" % pp)
+            if SHOW_MATCHES: print("< %s" % pp)
             msb_row = None
             continue
 
         if msb_row["recording_name"] > mb_row["recording_name"]:
-#            print("} %s" % pp)
+            if SHOW_MATCHES: print("} %s" % pp)
             mb_row = None
             continue
 
         if msb_row["recording_name"] < mb_row["recording_name"]:
-#            print("{ %s" % pp)
+            if SHOW_MATCHES: print("{ %s" % pp)
             msb_row = None
             continue
 
-#        print("= %s %s" % (pp, mb_row["recording_id"]))
+        if SHOW_MATCHES: print("= %s %s" % (pp, mb_row["recording_id"]))
 
         k = "%s=%s" % (msb_row["recording_msid"], mb_row["recording_id"])
         try:
@@ -251,22 +261,24 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
         if count % 1000000 == 0:
             print("%d matches, %s" % (count, mem_stats()))
 
+    print("mapping found %d matches" % len(recording_mapping))
     stats["recording_mapping_count"] = len(recording_mapping)
 
-    print("Calculate listen count histogram")
-    top_index = []
-    for k in recording_mapping:
-        top_index.append((recording_mapping[k][0], k))
+##    print("Calculate listen count histogram")
+#    top_index = []
+#    for k in recording_mapping:
+#        top_index.append((recording_mapping[k][0], k))
 
-    print("write records to disk")
+    print("write matches")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             register_uuid(curs)
             rows = []
             total = 0
-            for count, k in sorted(top_index, reverse=True):
+#            for count, k in sorted(top_index, reverse=True):
+            for k in recording_mapping.keys():
                 a = recording_mapping[k]
-                row = (a[0],
+                rows.append((a[0],
                     msb_recordings[a[1]]["artist_name"], 
                     msb_recordings[a[1]]["artist_msid"], 
                     msb_recordings[a[1]]["recording_name"], 
@@ -281,9 +293,10 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
                     mb_recordings[a[2]]["release_name"],
                     mb_recordings[a[2]]["release_id"],
                     source
-                    )
+                    ))
                 total += 1
                 if len(rows) == 2000:
+                    print("write matches!")
                     insert_mapping_rows(curs, rows)
                     rows = []
 

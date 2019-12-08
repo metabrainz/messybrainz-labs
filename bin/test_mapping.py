@@ -1,8 +1,9 @@
 import csv
 import psycopg2
+from settings import USE_MINIMAL_DATASET
 
 TEST_MAPPING_QUERY = '''
-    SELECT m.mb_recording_id
+    SELECT m.mb_release_id
       FROM musicbrainz.msd_mb_mapping m
      WHERE msb_artist_name = %s 
        AND msb_recording_name = %s
@@ -13,6 +14,11 @@ def _read_test_data(filename):
     with open(filename, newline='') as csvfile:
          reader = csv.reader(csvfile, delimiter=',', quotechar='"')
          for row in reader:
+             if not row:
+                if USE_MINIMAL_DATASET:
+                    break
+                else:
+                    continue
              data.append(row)
 
     return data
@@ -36,7 +42,7 @@ def test_mapping():
                     failed += 1
                     continue
 
-                if row[0] != rdata[2]:
+                if row[0] != int(rdata[2]):
                     print("'%s' '%s' expected %s, got %s" % (rdata[0], rdata[1], rdata[2], row[0]))
                     failed += 1
                 else:
