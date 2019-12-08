@@ -10,6 +10,7 @@ import datetime
 import subprocess
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
+from settings import USE_MINIMAL_DATASET
 
 BATCH_SIZE = 5000
 
@@ -45,41 +46,10 @@ INSERT INTO musicbrainz.recording_pair_releases (release)
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
 FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
       WHERE rg.artist_credit != 1 
-       AND rg.artist_credit = 1160983
+      %s
    ORDER BY rg.artist_credit, rg.type, rgst.id desc, fs.sort, date_year, date_month, date_day, country, rg.name
-
 '''
-
-test = ''' problaby ok to nuke soon
-    SELECT lower(musicbrainz.musicbrainz_unaccent(r.name)) as recording_name,
-           lower(musicbrainz.musicbrainz_unaccent(ac.name)) as artist_credit_name, array_agg(DISTINCT a.gid) as artist_mbids,
-           lower(musicbrainz.musicbrainz_unaccent(rl.name)) as release_name,
-           ac.id, rpr.id
-      FROM recording r
-      JOIN artist_credit ac ON r.artist_credit = ac.id
-      JOIN artist_credit_name acn ON ac.id = acn.artist_credit
-      JOIN artist a ON acn.artist = a.id
-      JOIN track t ON t.recording = r.id
-      JOIN medium m ON m.id = t.medium
-      JOIN release rl ON rl.id = m.release
-      JOIN recording_pair_releases rpr ON rl.id = rpr.release
-    GROUP BY rpr.id, ac.id, rl.gid, artist_credit_name, r.gid, r.name, a.gid, release_name
-    ORDER BY rpr.id, ac.id
-
-    SELECT lower(musicbrainz.musicbrainz_unaccent(r.name)) as recording_name,
-           lower(musicbrainz.musicbrainz_unaccent(ac.name)) as artist_credit_name,
-           lower(musicbrainz.musicbrainz_unaccent(rl.name)) as release_name,
-           ac.id, rpr.id
-      FROM recording r
-      JOIN artist_credit ac ON r.artist_credit = ac.id
-      JOIN artist_credit_name acn ON ac.id = acn.artist_credit
-      JOIN track t ON t.recording = r.id
-      JOIN medium m ON m.id = t.medium
-      JOIN release rl ON rl.id = m.release
-      JOIN recording_pair_releases rpr ON rl.id = rpr.release
-    GROUP BY rpr.id, ac.id, rl.gid, artist_credit_name, r.gid, r.name, release_name
-    ORDER BY rpr.id, ac.id
-'''
+SELECT_RELEASES_QUERY_WHERE_CLAUSE = 'AND rg.artist_credit = 1160983'
 
 SELECT_RECORDING_PAIRS_QUERY = '''
     SELECT lower(musicbrainz.musicbrainz_unaccent(r.name)) as recording_name, r.id as recording_id, 
@@ -233,7 +203,11 @@ def fetch_recording_pairs():
                     artist_recordings = {}
                     count = 0
                     print("Run fetch recordings query")
-                    mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY)
+                    if USE_MINIMAL_DATASET:
+                        print("Using a minimal dataset!")
+                        mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY % SELECT_RELEASES_QUERY_WHERE_CLAUSE)
+                    else:
+                        mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY % "")
                     print("Fetch recordings and insert to MSB")
                     while True:
                         row = mb_curs.fetchone()
