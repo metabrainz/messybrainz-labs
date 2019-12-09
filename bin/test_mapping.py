@@ -24,6 +24,12 @@ def _read_test_data(filename):
     return data
 
 
+def get_mbid_for_release_id(curs, release_id):
+    curs.execute("SELECT gid FROM release WHERE id = %d" % release_id)
+    row = curs.fetchone()
+    return row[0]
+
+
 def test_mapping():
     ''' This test will actually run as many test as there are in the CSV file '''
 
@@ -32,22 +38,25 @@ def test_mapping():
     passed = 0
     failed = 0
 
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
-        with conn.cursor() as curs:
-            for rdata in data:
-                curs.execute(TEST_MAPPING_QUERY, (rdata[1], rdata[0]))
-                row = curs.fetchone()
-                if not row:
-                    print("no match for '%s' '%s'" % (rdata[0], rdata[1]))
-                    failed += 1
-                    continue
+    with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as mb_conn:
+        with mb_conn.cursor() as mb_curs:
+            with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+                with conn.cursor() as curs:
+                    for rdata in data:
+                        curs.execute(TEST_MAPPING_QUERY, (rdata[1], rdata[0]))
+                        row = curs.fetchone()
+                        if not row:
+                            print("no match for '%s' '%s'" % (rdata[0], rdata[1]))
+                            failed += 1
+                            continue
 
-                if row[0] != int(rdata[2]):
-                    print("'%s' '%s' expected %s, got %s" % (rdata[0], rdata[1], rdata[2], row[0]))
-                    failed += 1
-                else:
-                    print("'%s' '%s' ok" % (rdata[0], rdata[1]))
-                    passed += 1
+                        if row[0] != int(rdata[2]):
+                            mbid = get_mbid_for_release_id(mb_curs, int(row[0]))
+                            print("'%s' '%s' expected %s, got %s (%s)" % (rdata[0], rdata[1], rdata[2], row[0], mbid))
+                            failed += 1
+                        else:
+                            print("'%s' '%s' ok" % (rdata[0], rdata[1]))
+                            passed += 1
 
     print("%d passed, %d failed." % (passed, failed))
 

@@ -202,7 +202,6 @@ def load_MB_recordings(stats):
 
     return (mb_recordings, mb_recording_index)
 
-
 def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, source):
 
     recording_mapping = {}
@@ -248,7 +247,7 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
             msb_row = None
             continue
 
-        if SHOW_MATCHES: print("= %s %s" % (pp, mb_row["recording_id"]))
+        if SHOW_MATCHES: print("= %s %s %s" % (pp, mb_row["recording_id"], mb_row['release_id']))
 
         k = "%s=%s" % (msb_row["recording_msid"], mb_row["recording_id"])
         try:
@@ -264,18 +263,12 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
     print("mapping found %d matches" % len(recording_mapping))
     stats["recording_mapping_count"] = len(recording_mapping)
 
-##    print("Calculate listen count histogram")
-#    top_index = []
-#    for k in recording_mapping:
-#        top_index.append((recording_mapping[k][0], k))
-
     print("write matches")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             register_uuid(curs)
             rows = []
             total = 0
-#            for count, k in sorted(top_index, reverse=True):
             for k in recording_mapping.keys():
                 a = recording_mapping[k]
                 rows.append((a[0],
@@ -295,14 +288,15 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
                     source
                     ))
                 total += 1
+
+                # Free up some memory
                 if len(rows) == 2000:
-                    print("write matches!")
                     insert_mapping_rows(curs, rows)
                     rows = []
 
                 if total % 1000000 == 0:
+                    gc.collect()
                     print("wrote %d of %d, %s" % (total, len(recording_mapping), mem_stats()))
-                    conn.commit()
 
             print("insert last mapping bits: %d" % len(rows))
             insert_mapping_rows(curs, rows)
@@ -326,6 +320,9 @@ def calculate_msid_mapping():
     stats["started"] = datetime.datetime.utcnow().isoformat()
     stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
 
+    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+        create_table(conn)
+
     print("Load MSB recordings")
     msb_recordings, msb_recording_index = load_MSB_recordings(stats)
 
@@ -333,18 +330,15 @@ def calculate_msid_mapping():
     mb_recordings, mb_recording_index = load_MB_recordings(stats)
 
     print("match recordings")
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
-        create_table(conn)
 
     match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, SOURCE_NAME)
 
-    print("free memory, %s" % mem_stats())
     msb_recordings = None
     msb_recording_index = None
     mb_recordings = None
     mb_recording_index = None
     gc.collect()
-    print("post gc, %s" % mem_stats())
+    print("memory cleanup complete, %s" % mem_stats())
 
     print("create indexes")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:

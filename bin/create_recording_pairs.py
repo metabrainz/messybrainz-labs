@@ -34,6 +34,7 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary
    ORDER BY rg.artist_credit, rg.type, sec_type desc , fs.sort, date_year, date_month, date_day, country, rg.name
 '''
 
+
 SELECT_RELEASES_QUERY = '''
 INSERT INTO musicbrainz.recording_pair_releases (release)
       SELECT r.id
