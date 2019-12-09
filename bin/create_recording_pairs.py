@@ -38,17 +38,19 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary
 SELECT_RELEASES_QUERY = '''
 INSERT INTO musicbrainz.recording_pair_releases (release)
       SELECT r.id
-       FROM musicbrainz.release_group rg 
-       JOIN musicbrainz.release r ON rg.id = r.release_group 
-       JOIN musicbrainz.release_country rc ON rc.release = r.id 
-       JOIN musicbrainz.medium m ON m.release = r.id 
-       JOIN musicbrainz.medium_format mf ON m.format = mf.id 
-       JOIN musicbrainz.format_sort fs ON mf.id = fs.format
+      FROM musicbrainz.release_group rg 
+      JOIN musicbrainz.release r ON rg.id = r.release_group 
+      JOIN musicbrainz.release_country rc ON rc.release = r.id 
+      JOIN musicbrainz.medium m ON m.release = r.id 
+      JOIN musicbrainz.medium_format mf ON m.format = mf.id 
+      JOIN musicbrainz.format_sort fs ON mf.id = fs.format
+JOIN musicbrainz.artist_credit ac ON rg.artist_credit = ac.id
+JOIN musicbrainz.release_group_primary_type rgpt ON rg.type = rgpt.id   
 FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = rgstj.release_group   
 FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
-      WHERE rg.artist_credit != 1 
-      %s
-   ORDER BY rg.artist_credit, rg.type, rgst.id desc, fs.sort, date_year, date_month, date_day, country, rg.name
+     WHERE rg.artist_credit != 1 
+     %s
+   ORDER BY rg.artist_credit, rg.type, rgst.id desc , fs.sort, date_year, date_month, date_day, country, rg.name
 '''
 SELECT_RELEASES_QUERY_WHERE_CLAUSE = 'AND rg.artist_credit = 1160983'
 
