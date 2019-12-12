@@ -46,6 +46,13 @@ def test_pairs():
                     failed += 1
                     print("no match for '%s' '%s'" % (rdata[0], rdata[1]))
 
+                        if row[0] != int(rdata[2]):
+                            mbid = get_mbid_for_release_id(mb_curs, int(row[0]))
+                            print("'%s' '%s' expected %s, got %s (%s)" % (rdata[0], rdata[1], rdata[2], row[0], mbid))
+                            failed += 1
+                        else:
+                            print("'%s' '%s' ok" % (rdata[0], rdata[1]))
+                            passed += 1
     print("%d passed, %d failed." % (passed, failed))
     if failed == 0:
         sys.exit(0)

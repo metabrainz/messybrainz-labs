@@ -1,6 +1,7 @@
+import re
 import csv
 import psycopg2
-from settings import USE_MINIMAL_DATASET
+from settings import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS
 
 TEST_MAPPING_QUERY = '''
     SELECT m.mb_release_id
@@ -15,10 +16,15 @@ def _read_test_data(filename):
          reader = csv.reader(csvfile, delimiter=',', quotechar='"')
          for row in reader:
              if not row:
-                if USE_MINIMAL_DATASET:
-                    break
-                else:
-                    continue
+                 if USE_MINIMAL_DATASET:
+                     break
+                 else:
+
+                     continue
+             if REMOVE_NON_WORD_CHARS:
+                 row[0] = re.sub(r'\W+', '', row[0])
+
+                 row[1] = re.sub(r'\W+', '', row[1])
              data.append(row)
 
     return data

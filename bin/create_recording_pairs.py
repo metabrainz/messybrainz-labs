@@ -17,8 +17,8 @@ BATCH_SIZE = 5000
 # This query will fetch all release groups for single artist release groups and order them
 # so that early digital albums are preferred.
 SELECT_RELEASES_QUERY_TESTING = '''
-    SELECT ac.name as ac_name, ac.id as ac_id , rg.id as rg_id, r.id as rel_id, r.name as r_name, rg.type as rg_type, 
-           rgpt.name as pri_type, rgst.name as sec_type, mf.name as format, date_year as year
+    SELECT left(ac.name, 50) as ac_name, left(r.name, 50) as r_name, rgpt.name as pri_type, rgst.name as sec_type, mf.name as format, 
+           date_year as year, date_month as month, date_day as day
       FROM musicbrainz.release_group rg 
       JOIN musicbrainz.release r ON rg.id = r.release_group 
       JOIN musicbrainz.release_country rc ON rc.release = r.id 
@@ -31,9 +31,11 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = r
 FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
      WHERE rg.artist_credit != 1 
        AND ac.id = 1160983
-   ORDER BY rg.artist_credit, rg.type, sec_type desc , fs.sort, date_year, date_month, date_day, country, rg.name
+   ORDER BY
+            rg.type, rgst.id desc, fs.sort, 
+            to_date(coalesce(date_year, 9999)::TEXT || '-' || coalesce(date_month, 12)::TEXT || '-' || coalesce(date_day, 31)::TEXT, 'YYYY-MM-DD'), 
+            country, rg.artist_credit, rg.name
 '''
-
 
 SELECT_RELEASES_QUERY = '''
 INSERT INTO musicbrainz.recording_pair_releases (release)
@@ -50,7 +52,10 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type_join rgstj ON rg.id = r
 FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary_type = rgst.id
      WHERE rg.artist_credit != 1 
      %s
-   ORDER BY rg.artist_credit, rg.type, rgst.id desc , fs.sort, date_year, date_month, date_day, country, rg.name
+   ORDER BY
+            rg.type, rgst.id desc, fs.sort, 
+            to_date(coalesce(date_year, 9999)::TEXT || '-' || coalesce(date_month, 12)::TEXT || '-' || coalesce(date_day, 31)::TEXT, 'YYYY-MM-DD'), 
+            country, rg.artist_credit, rg.name
 '''
 SELECT_RELEASES_QUERY_WHERE_CLAUSE = 'AND rg.artist_credit = 1160983'
 
