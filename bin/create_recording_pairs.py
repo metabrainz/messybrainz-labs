@@ -8,9 +8,10 @@ from psycopg2.extras import execute_values
 import operator
 import datetime
 import subprocess
+import re
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
-from settings import USE_MINIMAL_DATASET
+from settings import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS
 
 BATCH_SIZE = 5000
 
@@ -237,9 +238,17 @@ def fetch_recording_pairs():
                                 print("inserted %d rows." % count)
                                 rows = []
 
-                        if row['recording_name'] not in artist_recordings:
-                            artist_recordings[row['recording_name']] = (row['recording_name'], row['recording_id'], 
-                                row['artist_credit_name'], row['artist_credit_id'], row['release_name'], row['release_id'])
+                        recording_name = row['recording_name']
+                        artist_credit_name = row['artist_credit_name']
+                        release_name = row['release_name']
+                        if REMOVE_NON_WORD_CHARS:
+                            recording_name = re.sub(r'\W+', '', recording_name)
+                        if recording_name not in artist_recordings:
+                            if REMOVE_NON_WORD_CHARS:
+                                artist_credit_name = re.sub(r'\W+', '', artist_credit_name)
+                                release_name = re.sub(r'\W+', '', release_name)
+                            artist_recordings[recording_name] = (recording_name, row['recording_id'], 
+                                artist_credit_name, row['artist_credit_id'], release_name, row['release_id'])
 
                         last_ac_id = row['artist_credit_id']
 
