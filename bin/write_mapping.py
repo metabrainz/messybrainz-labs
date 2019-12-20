@@ -77,7 +77,7 @@ def load_artist_credit_xref():
 
 
 
-def dump_mapping(filename, include_text, include_matchable):
+def dump_mapping(filename, include_text, include_matchable, partial = False):
 
     print("load artist index...")
     artist_credit_index = load_artist_credit_xref()
@@ -95,9 +95,14 @@ def dump_mapping(filename, include_text, include_matchable):
         with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
                 if include_text:
-                    curs.execute(SELECT_QUERY_WITH_TEXT + " LIMIT 1000")
+                    query = SELECT_QUERY_WITH_TEXT
                 else:
-                    curs.execute(SELECT_QUERY + " LIMIT 1000")
+                    query = SELECT_QUERY
+
+                if partial:
+                    query += " LIMIT 1000"
+
+                curs.execute(query)
 
                 while True:
                     data = curs.fetchone()
