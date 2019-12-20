@@ -3,3 +3,4 @@ ujson
 nose
 python-Levenshtein==0.12.0
 psutil
+click
