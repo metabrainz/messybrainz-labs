@@ -154,15 +154,10 @@ def load_MSB_recordings(stats, offset):
                     print("load MSB %d, %s" % (count, mem_stats()))
 
     if count == 0:
-        return (None, None)
+        return (stats, None)
 
     stats["msb_recording_count"] = len(msb_recordings)
-
-    print("sort MSB recordings %d items, %s" % (len(msb_recordings), mem_stats()))
-    msb_recording_index = list(range(len(msb_recordings)))
-    msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
-
-    return (msb_recordings, msb_recording_index)
+    return stats, msb_recordings
 
 
 def load_MB_recordings(stats):
@@ -209,7 +204,8 @@ def load_MB_recordings(stats):
 
     return (mb_recordings, mb_recording_index)
 
-def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, source):
+
+def match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, source):
 
     recording_mapping = {}
     mb_index = -1
@@ -267,13 +263,16 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
         if count % 1000000 == 0:
             print("%d matches, %s" % (count, mem_stats()))
 
-    print("mapping found %d matches out of %d (%d%%)" % (
+    print("  mapping found %d matches out of %d (%d%%)" % (
                 len(recording_mapping), 
                 len(msb_recordings), 
                 len(recording_mapping) * 100 / len(msb_recordings)))
-    stats["recording_mapping_count"] += len(recording_mapping)
 
-    print("insert matches")
+    return recording_mapping
+
+
+def insert_matches(recording_mapping, mb_recordings, msb_recordings, source):
+
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             register_uuid(curs)
@@ -299,37 +298,39 @@ def match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, 
                     ))
                 total += 1
 
-                # Free up some memory
                 if len(rows) == 2000:
                     insert_mapping_rows(curs, rows)
                     rows = []
 
                 if total % 1000000 == 0:
-                    gc.collect()
                     print("  wrote %d of %d, %s" % (total, len(recording_mapping), mem_stats()))
 
             insert_mapping_rows(curs, rows)
             conn.commit()
 
-        stats['msid_mbid_mapping_count'] += total
+    print("  remove matched MSB recordings")
+    to_remove = [ recording_mapping[k][1] for k in recording_mapping ]
+    for k in sorted(to_remove, reverse=True):
+        del msb_recordings[k]
+
+    return (total, msb_recordings)
 
 
-    stats["completed"] = datetime.datetime.utcnow().isoformat()
+def remove_parens(msb_recordings):
+    for recording in msb_recordings:
+        recording["recording_name"] = recording["recording_name"][:recording["recording_name"].find("("):].strip()
 
+    return msb_recordings
 
-#                no_paren_rec = recording[:recording.find("("):].strip()
-#                if no_paren_rec != recording:
-#                    msb_recordings.append((artist, artist_mbid, no_paren_rec, recording_mbid, release, release_mbid, recording))
-#                    no_paren_recordings += 1
-#                    no_paren_rec = re.sub(r'\W+', '', no_paren_rec)
 
 def calculate_msid_mapping():
 
     stats = {}
     stats["started"] = datetime.datetime.utcnow().isoformat()
     stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
-    stats["recording_mapping_count"] = 0
     stats['msid_mbid_mapping_count'] = 0
+    stats['exact_match_count'] = 0
+    stats['noparen_match_count'] = 0
 
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         create_table(conn)
@@ -340,12 +341,41 @@ def calculate_msid_mapping():
     msb_offset = 0
     while True:
         print("Load MSB recordings offset %d" % msb_offset)
-        msb_recordings, msb_recording_index = load_MSB_recordings(stats, msb_offset)
+        stats, msb_recordings = load_MSB_recordings(stats, msb_offset)
         if not msb_recordings:
             break
 
-        print("match recordings")
-        match_recordings(stats, msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, SOURCE_NAME)
+        print("  sort MSB recordings %d items, %s" % (len(msb_recordings), mem_stats()))
+        msb_recording_index = list(range(len(msb_recordings)))
+        msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
+
+        print("  match recordings")
+        recording_mapping = match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, SOURCE_NAME)
+
+        print("  insert matches")
+        inserted, msb_recordings = insert_matches(recording_mapping, mb_recordings, msb_recordings, "exact")
+        stats['msid_mbid_mapping_count'] += inserted
+        stats['exact_match_count'] += inserted
+
+        print("  %s MSB recordings left" % len(msb_recordings))
+
+
+        print("  remove parens")
+        msb_recordings = remove_parens(msb_recordings)
+
+        print("  sort MSB recordings %d items, %s" % (len(msb_recordings), mem_stats()))
+        msb_recording_index = list(range(len(msb_recordings)))
+        msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
+
+        print("  match recordings")
+        recording_mapping = match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, NO_PARENS_SOURCE_NAME)
+
+        print("  insert matches")
+        inserted, msb_recordings = insert_matches(recording_mapping, mb_recordings, msb_recordings, "exact")
+        stats['msid_mbid_mapping_count'] += inserted
+        stats['noparen_match_count'] += inserted
+
+        print("  %s MSB recordings left" % len(msb_recordings))
 
         msb_recordings = None
         msb_recording_index = None
@@ -353,6 +383,8 @@ def calculate_msid_mapping():
 
         msb_offset += MSB_BATCH_SIZE
 
+    stats["msb_coverage"] = int(stats["msid_mbid_mapping_count"] / stats["msb_recording_count"] * 100) 
+    stats["completed"] = datetime.datetime.utcnow().isoformat()
 
     print("create indexes")
     with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:

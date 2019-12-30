@@ -11,6 +11,8 @@ import tarfile
 import click
 from tempfile import mkstemp
 
+DUMP_FILE = "msid-mbid-mapping%s.tar.bz2"
+
 SELECT_QUERY = """
     SELECT DISTINCT msb_recording_msid, mb_recording_id,
                     msb_artist_msid, mb_artist_credit_id,
@@ -77,7 +79,7 @@ def load_artist_credit_xref():
 
 
 
-def dump_mapping(filename, include_text, include_matchable, partial = False):
+def dump_mapping(include_text, include_matchable, partial = False):
 
     print("load artist index...")
     artist_credit_index = load_artist_credit_xref()
@@ -85,6 +87,13 @@ def dump_mapping(filename, include_text, include_matchable, partial = False):
     release_index = load_id_xref("release", include_text)
     print("load recording index...")
     recording_index = load_id_xref("recording", include_text)
+
+    if include_matchable:
+        filename = DUMP_FILE % "-with-matchable"
+    elif include_text:
+        filename = DUMP_FILE % "-with-text"
+    else:
+        filename = DUMP_FILE % ""
 
     count = 0
     fh, temp_file = mkstemp()
@@ -154,7 +163,9 @@ def dump_mapping(filename, include_text, include_matchable, partial = False):
 @click.option('--with-text', '-t', is_flag=True, default=False)
 @click.option('--with-matchable', '-t', is_flag=True, default=False)
 def dump(**opts):
-    dump_mapping("msid-mbid-mapping-with-text.tar.bz2", opts['with_text'], opts['with_matchable'])
+    if opts['with_matchable']:
+        opts['with_text'] = True
+    dump_mapping(opts['with_text'], opts['with_matchable'])
 
 
 if __name__ == "__main__":
