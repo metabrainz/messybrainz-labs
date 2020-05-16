@@ -26,9 +26,9 @@ NO_PARENS_SOURCE_NAME = "noparens"
 MSB_BATCH_SIZE = 20000000
 
 SELECT_MSB_RECORDINGS_QUERY = '''
-         SELECT lower(musicbrainz.musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
-                lower(musicbrainz.musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, r.gid AS recording_msid,
-                lower(musicbrainz.musicbrainz_unaccent(rl.title)) AS release_name, rl.gid AS release_msid
+         SELECT lower(musicbrainz_unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
+                lower(musicbrainz_unaccent(rj.data->>'title'::TEXT)) AS recording_name, r.gid AS recording_msid,
+                lower(musicbrainz_unaccent(rl.title::TEXT)) AS release_name, rl.gid AS release_msid
            FROM recording r
            JOIN recording_json rj ON r.data = rj.id
 LEFT OUTER JOIN release rl ON r.release = rl.gid
@@ -40,9 +40,9 @@ SELECT_MSB_RECORDINGS_QUERY_WHERE_CLAUSE = '''
 '''
 
 SELECT_MB_RECORDINGS_QUERY = '''
-    SELECT DISTINCT lower(musicbrainz.musicbrainz_unaccent(artist_credit_name)) as artist_credit_name, artist_credit_id,
-                    lower(musicbrainz.musicbrainz_unaccent(recording_name)) AS recording_name, recording_id,
-                    lower(musicbrainz.musicbrainz_unaccent(release_name)) AS release_name, release_id
+    SELECT DISTINCT lower(musicbrainz_unaccent(artist_credit_name::TEXT)) as artist_credit_name, artist_credit_id,
+                    lower(musicbrainz_unaccent(recording_name::TEXT)) AS recording_name, recording_id,
+                    lower(musicbrainz_unaccent(release_name::TEXT)) AS release_name, release_id
       FROM musicbrainz.recording_artist_credit_pairs 
       %s
 '''
@@ -116,7 +116,7 @@ def load_MSB_recordings(stats, offset):
     msb_recordings = []
 
     count = 0
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+    with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             if USE_MINIMAL_DATASET:
                 query = SELECT_MSB_RECORDINGS_QUERY % SELECT_MSB_RECORDINGS_QUERY_WHERE_CLAUSE
@@ -164,7 +164,7 @@ def load_MB_recordings(stats):
 
     mb_recordings = []
     count = 0
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+    with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             if USE_MINIMAL_DATASET:
                 curs.execute(SELECT_MB_RECORDINGS_QUERY % SELECT_MB_RECORDINGS_QUERY_WHERE_CLAUSE)
@@ -205,7 +205,7 @@ def load_MB_recordings(stats):
     return (mb_recordings, mb_recording_index)
 
 
-def match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, source):
+def match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index):
 
     recording_mapping = {}
     mb_index = -1
@@ -273,13 +273,15 @@ def match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_reco
 
 def insert_matches(recording_mapping, mb_recordings, msb_recordings, source):
 
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+    completed = {}
+    with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             register_uuid(curs)
             rows = []
             total = 0
             for k in recording_mapping.keys():
                 a = recording_mapping[k]
+                completed[a[0]] = 1
                 rows.append((a[0],
                     msb_recordings[a[1]]["artist_name"], 
                     msb_recordings[a[1]]["artist_msid"], 
@@ -308,12 +310,16 @@ def insert_matches(recording_mapping, mb_recordings, msb_recordings, source):
             insert_mapping_rows(curs, rows)
             conn.commit()
 
-    print("  remove matched MSB recordings")
-    to_remove = [ recording_mapping[k][1] for k in recording_mapping ]
-    for k in sorted(to_remove, reverse=True):
-        del msb_recordings[k]
+    msb_recording_index = []
+    for i, msb_recording in enumerate(msb_recordings):
+        if i in completed:
+            continue
 
-    return (total, msb_recordings)
+        msb_recording_index.append(i)
+
+    msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
+
+    return (total, msb_recording_index)
 
 
 def remove_parens(msb_recordings):
@@ -332,7 +338,7 @@ def calculate_msid_mapping():
     stats['exact_match_count'] = 0
     stats['noparen_match_count'] = 0
 
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+    with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         create_table(conn)
 
     print("Load MB recordings")
@@ -350,28 +356,23 @@ def calculate_msid_mapping():
         msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
 
         print("  match recordings")
-        recording_mapping = match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, SOURCE_NAME)
+        recording_mapping = match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index)
 
         print("  insert matches")
-        inserted, msb_recordings = insert_matches(recording_mapping, mb_recordings, msb_recordings, "exact")
+        inserted, msb_recording_index = insert_matches(recording_mapping, mb_recordings, msb_recordings, SOURCE_NAME)
         stats['msid_mbid_mapping_count'] += inserted
         stats['exact_match_count'] += inserted
 
         print("  %s MSB recordings left" % len(msb_recordings))
 
-
         print("  remove parens")
         msb_recordings = remove_parens(msb_recordings)
 
-        print("  sort MSB recordings %d items, %s" % (len(msb_recordings), mem_stats()))
-        msb_recording_index = list(range(len(msb_recordings)))
-        msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
-
         print("  match recordings")
-        recording_mapping = match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index, NO_PARENS_SOURCE_NAME)
+        recording_mapping = match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_recording_index)
 
         print("  insert matches")
-        inserted, msb_recordings = insert_matches(recording_mapping, mb_recordings, msb_recordings, "exact")
+        inserted, msb_recording_index = insert_matches(recording_mapping, mb_recordings, msb_recordings, NO_PARENS_SOURCE_NAME)
         stats['msid_mbid_mapping_count'] += inserted
         stats['noparen_match_count'] += inserted
 
@@ -387,7 +388,7 @@ def calculate_msid_mapping():
     stats["completed"] = datetime.datetime.utcnow().isoformat()
 
     print("create indexes")
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+    with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         create_indexes(conn)
 
     with open("mapping-stats.json", "w") as f:

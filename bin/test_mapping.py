@@ -46,7 +46,7 @@ def test_mapping():
 
     with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as mb_conn:
         with mb_conn.cursor() as mb_curs:
-            with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+            with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
                 with conn.cursor() as curs:
                     for rdata in data:
                         curs.execute(TEST_MAPPING_QUERY, (rdata[1], rdata[0]))

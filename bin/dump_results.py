@@ -49,7 +49,7 @@ def dump_recordings_to_html():
     print("load & categorize recordings")
     categories = {}
 
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+    with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor() as curs:
             curs.execute(SELECT_QUERY)
             while True:

@@ -115,7 +115,7 @@ def find_mispelings(edit_distance_threshold):
     stats["started"] = datetime.datetime.utcnow().isoformat()
     stats["git commit hash"] = subprocess.getoutput("git rev-parse HEAD")
 
-    with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+    with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
             curs.execute(SELECT_MISPELLED_ARTIST_QUERY)
 

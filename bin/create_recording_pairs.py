@@ -197,7 +197,7 @@ def fetch_recording_pairs():
 
     with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as mb_conn:
         with mb_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as mb_curs:
-            with psycopg2.connect('dbname=messybrainz user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as msb_conn:
+            with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as msb_conn:
 
                 # Create the dest table (perhaps dropping the old one first)
                 print("Drop/create pairs table")
