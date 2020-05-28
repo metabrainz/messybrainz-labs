@@ -1,3 +1,3 @@
 #!/bin/bash
 
-docker exec -it msid-mapping-host python3 bin/test/test_mapping.py 
+python3 test/test_mapping.py 

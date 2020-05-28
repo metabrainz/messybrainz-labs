@@ -91,15 +91,15 @@ ANALOG_FORMATS = [
 def output_list(id, formats):
 
     for format_id, format in formats:
-        print("INSERT INTO musicbrainz.format_sort values (%d, %s);" % (id, format_id))
+        print("INSERT INTO mapping.format_sort values (%d, %s);" % (id, format_id))
         id += 1
 
     return id
 
-print("drop table musicbrainz.format_sort;")
-print("create table musicbrainz.format_sort ( format integer, sort integer );")
-print("create index format_sort_format_ndx on musicbrainz.format_sort(format);")
-print("create index format_sort_sort_ndx on musicbrainz.format_sort(sort);")
+print("drop table mapping.format_sort;")
+print("create table mapping.format_sort ( format integer, sort integer );")
+print("create index format_sort_format_ndx on mapping.format_sort(format);")
+print("create index format_sort_sort_ndx on mapping.format_sort(sort);")
 
 id = 1
 id = output_list(id, DIGITAL_FORMATS)

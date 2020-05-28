@@ -4,12 +4,14 @@ import sys
 import datetime, time
 import os
 import bz2
-import psycopg2
-import psycopg2.extras
 import ujson
 import tarfile
-import click
 from tempfile import mkstemp
+
+import click
+import psycopg2
+import psycopg2.extras
+import config
 
 DUMP_FILE = "msid-mbid-mapping%s.tar.bz2"
 
@@ -17,20 +19,21 @@ SELECT_QUERY = """
     SELECT DISTINCT msb_recording_msid, mb_recording_id,
                     msb_artist_msid, mb_artist_credit_id,
                     msb_release_msid, mb_release_id
-               FROM musicbrainz.msd_mb_mapping
+               FROM mapping.msd_mb_mapping
 """;
 
 SELECT_QUERY_WITH_TEXT = """
     SELECT DISTINCT msb_recording_msid, mb_recording_id, msb_recording_name,
-                    msb_artist_msid, mb_artist_credit_id,
+                    msb_artist_msid, mb_artist_credit_id, msb_artist_name,
                     msb_release_msid, mb_release_id, msb_release_name
-               FROM musicbrainz.msd_mb_mapping
+               FROM mapping.msd_mb_mapping
 """;
 
 SELECT_XREF_QUERY = """SELECT id, gid FROM %s"""
 SELECT_XREF_QUERY_WITH_TEXT = """SELECT id, gid, name FROM %s"""
 SELECT_ARTIST_CREDITS_QUERY = """
-    SELECT ac.id AS ac_id, ac.name AS ac_name, array_agg(a.gid) AS artist_mbids
+    SELECT ac.id AS ac_id, ac.name AS ac_name, 
+           array_agg(a.gid) AS artist_mbids
       FROM artist_credit ac 
       JOIN artist_credit_name acn 
         ON ac.id = acn.artist_credit 
@@ -42,7 +45,7 @@ SELECT_ARTIST_CREDITS_QUERY = """
 def load_id_xref(table, include_text):
 
     index = {}
-    with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as conn:
+    with psycopg2.connect(config.DB_CONNECT_MB) as conn:
         with conn.cursor() as curs:
             if include_text:
                 curs.execute(SELECT_XREF_QUERY_WITH_TEXT % table)
@@ -64,7 +67,7 @@ def load_id_xref(table, include_text):
 def load_artist_credit_xref():
 
     index = {}
-    with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as conn:
+    with psycopg2.connect(config.DB_CONNECT_MB) as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
             curs.execute(SELECT_ARTIST_CREDITS_QUERY)
             while True:
@@ -101,7 +104,7 @@ def dump_mapping(include_text, include_matchable, partial = False):
 
     print("writing mapping to %s" % temp_file)
     with open(temp_file, "wt") as f:
-        with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+        with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
                 if include_text:
                     query = SELECT_QUERY_WITH_TEXT
@@ -133,7 +136,7 @@ def dump_mapping(include_text, include_matchable, partial = False):
                         data_dict["msb_release_name"] = release_index[int(data["mb_release_id"])][1]
                     if include_matchable:
                         data_dict["msb_recording_name_matchable"] = data["msb_recording_name"] 
-                        data_dict["msb_artist_credit_name_matchable"] = artist_credit_index[int(data["mb_artist_credit_id"])][0]
+                        data_dict["msb_artist_credit_name_matchable"] = data["msb_artist_name"]
                         data_dict["msb_release_name_matchable"] = data["msb_release_name"]
 
                     f.write(ujson.dumps(data_dict) + "\n")

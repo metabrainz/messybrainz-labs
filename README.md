@@ -1,52 +1,56 @@
-To build the container:
+Introduction
+============
 
-./run.sh build
+This sub-project calculates the Messybrainz <=> MusicBrainz mapping. To run it, you'll need a copy of the
+musicbrainz database and a copy of the messybrainz database. To create the mapping requires rather a lot of 
+RAM. When this software was developed a 64GB server was used.
 
-To run the container so we can start programs in it:
 
-./run.sh up
+Installing MessyBrainz data
+---------------------------
 
-To create the MSID mapping you'll first need to run create recordings pairs script:
+Get someone from the MB team with DB access to the messybrainz database, make a dump of the DB with pg-dump. Then:
 
-./run.sh bin/create_recording_pairs.py
+1. `createuser -U musicbrainz -h localhost -p 25432 --pwprompt messybrainz`
+2. `createdb -U musicbrainz -O messybrainz -p 25432 -h localhost messybrainz`
+3. `psql -U messybrainz -h localhost -p 25432 messybrainz < messybrainz_db.sql`
 
-Once this completes, run the create msid mapping.py script:
 
-./run.sh bin/create_msid_mapping.py
+Install the MessyBrainz mapping code
+------------------------------------
 
-Now the mapping is complete. Test it using:
+To create the actual mapping do:
 
-./run.sh bin/test.sh
+1. Install and setup musicbrainz-docker ( https://github.com/metabrainz/musicbrainz-docker ). No need for search indexes.
+2. Expose the postgres port to the host machine.
+3. Copy config.py.sample to config.py and set your DB connect string, based on your setup of musicbrainz-docker.
+4. Create a python virtual env (e.g. virtualenv -p python3 .ve) and activate it.
+5. Install requirements with `pip install -r requirements.txt`
 
+Then some more DB setup is needed:
+
+`echo "CREATE SCHEMA mapping;" | psql -U musicbrainz -p 5432 -h localhost musicbrainz_db`
+`python3 formats.py | psql -U musicbrainz -p 25432 -h localhost musicbrainz_db`
+
+The DB is now setup!
+
+
+Create the MessyBrainz mapping
+------------------------------
+
+You'll create the mapping in two steps:
+
+1. run `./create_recording_pairs.py`
+2. run `./create_msid_mapping.py`
+
+
+Testing and dumping the finished mapping
+----------------------------------------
+
+Once these complete, you can run the tests on the mapping:
+
+`./test.sh`
 
 Then you can write the mapping dump files to disk:
 
-./run.sh write_mapping.py
-
-To dump the HTML static pages
-
-./run.sh bin/dump_results.py
-
-To host the static files in a docker container:
-
-docker rm -f messybrainz-results ; docker run --name messybrainz-output -p 80:80 --name messybrainz-results -v `pwd`/html:/usr/share/nginx/html:ro -d nginx
-
-To get a DB prompt:
-
-docker exec -it musicbrainz-docker_db_1 psql -U musicbrainz messybrainz
-docker exec -it musicbrainz-docker_db_1 psql -U musicbrainz musicbrainz_db
-
-
-Database preparation
-====================
-
-createuser -U musicbrainz -s -P msbpw
-
-CREATE INDEX artist_name_ndx_recording_json ON recording_json ((data ->> 'artist'));
-CREATE INDEX artist_credit_name_ndx_recording_artist_credit_pairs ON musicbrainz.recording_artist_credit_pairs(artist_credit_name);
-
-CREATE EXTENSION musicbrainz_unaccent;
-
-
-
-
+`./write_mapping.py`

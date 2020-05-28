@@ -3,3 +3,5 @@ __pycache__
 *.bz2
 *.xz
 *.json
+config.py
+.ve
