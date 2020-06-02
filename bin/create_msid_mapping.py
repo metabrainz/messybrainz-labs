@@ -17,7 +17,7 @@ from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from psycopg2.extras import execute_values, register_uuid
 from utils import insert_rows
-from settings import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS, SHOW_MATCHES
+sys.path.append("..")
 import config
 
 # The name of the script to be saved in the source field.
@@ -119,7 +119,7 @@ def load_MSB_recordings(stats, offset):
     count = 0
     with psycopg2.connect(config.DB_CONNECT_MSB) as conn:
         with conn.cursor() as curs:
-            if USE_MINIMAL_DATASET:
+            if config.USE_MINIMAL_DATASET:
                 query = SELECT_MSB_RECORDINGS_QUERY % SELECT_MSB_RECORDINGS_QUERY_WHERE_CLAUSE
             else:
                 query = SELECT_MSB_RECORDINGS_QUERY % ""
@@ -137,7 +137,7 @@ def load_MSB_recordings(stats, offset):
                 release = msb_row[4] or ""
                 release_msid = msb_row[5] or None
                     
-                if REMOVE_NON_WORD_CHARS:
+                if config.REMOVE_NON_WORD_CHARS:
                     artist = re.sub(r'\W+', '', artist)
                     recording = re.sub(r'\W+', '', recording)
                     release = re.sub(r'\W+', '', release)
@@ -167,7 +167,7 @@ def load_MB_recordings(stats):
     count = 0
     with psycopg2.connect(config.DB_CONNECT_MB) as conn:
         with conn.cursor() as curs:
-            if USE_MINIMAL_DATASET:
+            if config.USE_MINIMAL_DATASET:
                 curs.execute(SELECT_MB_RECORDINGS_QUERY % SELECT_MB_RECORDINGS_QUERY_WHERE_CLAUSE)
             else:
                 curs.execute(SELECT_MB_RECORDINGS_QUERY % "")
@@ -182,7 +182,7 @@ def load_MB_recordings(stats):
                 recording_id = int(mb_row[3])
                 release = mb_row[4]
                 release_id = int(mb_row[5])
-                if REMOVE_NON_WORD_CHARS:
+                if config.REMOVE_NON_WORD_CHARS:
                     artist = re.sub(r'\W+', '', artist)
                     recording = re.sub(r'\W+', '', recording)
                     release = re.sub(r'\W+', '', release)
@@ -232,28 +232,28 @@ def match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_reco
         pp = "%-37s %-37s = %-27s %-37s %s" % (msb_row["artist_name"][0:25], msb_row["recording_name"][0:25], 
             mb_row["artist_name"][0:25], mb_row["recording_name"][0:25], msb_row["recording_msid"][0:8])
         if msb_row["artist_name"] > mb_row["artist_name"]:
-            if SHOW_MATCHES: print("> %s" % pp)
+            if config.SHOW_MATCHES: print("> %s" % pp)
             mb_row = None
             continue
 
         if msb_row["artist_name"] < mb_row["artist_name"]:
-            if SHOW_MATCHES: print("< %s" % pp)
+            if config.SHOW_MATCHES: print("< %s" % pp)
             msb_row = None
             continue
 
         if msb_row["recording_name"] > mb_row["recording_name"]:
-            if SHOW_MATCHES: print("} %s" % pp)
+            if config.SHOW_MATCHES: print("} %s" % pp)
             if unmatched: unmatched.write("%s\n" % msb_row['recording_msid'])
             mb_row = None
             continue
 
         if msb_row["recording_name"] < mb_row["recording_name"]:
-            if SHOW_MATCHES: print("{ %s" % pp)
+            if config.SHOW_MATCHES: print("{ %s" % pp)
             if unmatched: unmatched.write("%s\n" % msb_row['recording_msid'])
             msb_row = None
             continue
 
-        if SHOW_MATCHES: print("= %s %s %s" % (pp, mb_row["recording_id"], mb_row['release_id']))
+        if config.SHOW_MATCHES: print("= %s %s %s" % (pp, mb_row["recording_id"], mb_row['release_id']))
 
         k = "%s=%s" % (msb_row["recording_msid"], mb_row["recording_id"])
         try:

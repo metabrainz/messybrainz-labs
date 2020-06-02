@@ -1,7 +1,9 @@
 import sys
 import csv
 import psycopg2
-from settings import USE_MINIMAL_DATASET
+
+sys.path.append("..")
+from config import USE_MINIMAL_DATASET
 
 # TODO: Make this work for punct removed data as well
 

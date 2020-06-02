@@ -11,6 +11,8 @@ from tempfile import mkstemp
 import click
 import psycopg2
 import psycopg2.extras
+
+sys.path.append("..")
 import config
 
 DUMP_FILE = "msid-mbid-mapping%s.tar.bz2"

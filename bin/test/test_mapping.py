@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
+
+import sys
 import re
 import csv
 import psycopg2
-from settings import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS
+sys.path.append("..")
+from config import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS
 
 TEST_MAPPING_QUERY = '''
     SELECT m.mb_release_id

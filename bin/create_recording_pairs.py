@@ -2,18 +2,21 @@
 
 import sys
 import pprint
-import psycopg2
-import ujson
-from psycopg2.extras import execute_values
 import operator
 import datetime
 import subprocess
-import re
 from time import time
+import re
+
+import ujson
+import psycopg2
+from psycopg2.extras import execute_values
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
-from settings import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS
-import config
 from utils import create_schema, insert_rows
+
+#sys.path.append("..")
+from .. import config
+
 
 BATCH_SIZE = 5000
 
@@ -146,7 +149,7 @@ def create_temp_release_table(conn, stats):
 
     with conn.cursor() as curs:
         print("Run select releases query")
-        if USE_MINIMAL_DATASET:
+        if config.USE_MINIMAL_DATASET:
             print("Using a minimal dataset!")
             curs.execute(SELECT_RELEASES_QUERY % SELECT_RELEASES_QUERY_WHERE_CLAUSE)
         else:
@@ -214,10 +217,10 @@ def fetch_recording_pairs():
                         recording_name = row['recording_name']
                         artist_credit_name = row['artist_credit_name']
                         release_name = row['release_name']
-                        if REMOVE_NON_WORD_CHARS:
+                        if config.REMOVE_NON_WORD_CHARS:
                             recording_name = re.sub(r'\W+', '', recording_name)
                         if recording_name not in artist_recordings:
-                            if REMOVE_NON_WORD_CHARS:
+                            if config.REMOVE_NON_WORD_CHARS:
                                 artist_credit_name = re.sub(r'\W+', '', artist_credit_name)
                                 release_name = re.sub(r'\W+', '', release_name)
                             artist_recordings[recording_name] = (recording_name, row['recording_id'], 
