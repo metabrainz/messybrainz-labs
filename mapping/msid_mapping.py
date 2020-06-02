@@ -16,8 +16,7 @@ from sys import stdout
 from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from psycopg2.extras import execute_values, register_uuid
-from utils import insert_rows
-sys.path.append("..")
+from mapping.utils import insert_rows
 import config
 
 # The name of the script to be saved in the source field.
@@ -52,7 +51,7 @@ SELECT_MB_RECORDINGS_QUERY_WHERE_CLAUSE = '''
 '''
 
 CREATE_MAPPING_TABLE_QUERY = """
-    CREATE TABLE mapping.msd_mb_mapping (
+    CREATE TABLE mapping.msid_mbid_mapping (
         count INTEGER,
         msb_artist_name     TEXT,
         msb_artist_msid     UUID,
@@ -71,12 +70,12 @@ CREATE_MAPPING_TABLE_QUERY = """
 """
 
 CREATE_MAPPING_INDEXES_QUERIES = [
-    "CREATE INDEX msd_mb_mapping_msb_recording_name_ndx ON mapping.msd_mb_mapping(msb_recording_name)",
-    "CREATE INDEX msd_mb_mapping_msb_recording_msid_ndx ON mapping.msd_mb_mapping(msb_recording_msid)",
-    "CREATE INDEX msd_mb_mapping_msb_artist_name_ndx ON mapping.msd_mb_mapping(msb_artist_name)",
-    "CREATE INDEX msd_mb_mapping_msb_artist_msid_ndx ON mapping.msd_mb_mapping(msb_artist_msid)",
-    "CREATE INDEX msd_mb_mapping_msb_release_name_ndx ON mapping.msd_mb_mapping(msb_release_name)",
-    "CREATE INDEX msd_mb_mapping_msb_release_msid_ndx ON mapping.msd_mb_mapping(msb_release_msid)",
+    "CREATE INDEX msid_mbid_mapping_msb_recording_name_ndx ON mapping.msid_mbid_mapping(msb_recording_name)",
+    "CREATE INDEX msid_mbid_mapping_msb_recording_msid_ndx ON mapping.msid_mbid_mapping(msb_recording_msid)",
+    "CREATE INDEX msid_mbid_mapping_msb_artist_name_ndx ON mapping.msid_mbid_mapping(msb_artist_name)",
+    "CREATE INDEX msid_mbid_mapping_msb_artist_msid_ndx ON mapping.msid_mbid_mapping(msb_artist_msid)",
+    "CREATE INDEX msid_mbid_mapping_msb_release_name_ndx ON mapping.msid_mbid_mapping(msb_release_name)",
+    "CREATE INDEX msid_mbid_mapping_msb_release_msid_ndx ON mapping.msid_mbid_mapping(msb_release_msid)",
 ]
 
 def mem_stats():
@@ -95,7 +94,7 @@ def create_table(conn):
 
             except DuplicateTable as err:
                 conn.rollback() 
-                curs.execute("DROP TABLE mapping.msd_mb_mapping")
+                curs.execute("DROP TABLE mapping.msid_mbid_mapping")
                 conn.commit() 
 
 
@@ -304,13 +303,13 @@ def insert_matches(recording_mapping, mb_recordings, msb_recordings, source):
                 total += 1
 
                 if len(rows) == 2000:
-                    insert_rows(curs, "mapping.msd_mb_mapping", rows)
+                    insert_rows(curs, "mapping.msid_mbid_mapping", rows)
                     rows = []
 
                 if total % 1000000 == 0:
                     print("  wrote %d of %d, %s" % (total, len(recording_mapping), mem_stats()))
 
-            insert_rows(curs, "mapping.msd_mb_mapping", rows)
+            insert_rows(curs, "mapping.msid_mbid_mapping", rows)
             conn.commit()
 
     msb_recording_index = []
@@ -332,7 +331,7 @@ def remove_parens(msb_recordings):
     return msb_recordings
 
 
-def calculate_msid_mapping():
+def create_mapping():
 
     stats = {}
     stats["started"] = datetime.datetime.utcnow().isoformat()
@@ -397,7 +396,3 @@ def calculate_msid_mapping():
 
     with open("mapping-stats.json", "w") as f:
         f.write(ujson.dumps(stats, indent=2) + "\n")
-
-
-if __name__ == "__main__":
-    calculate_msid_mapping()

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import sys
 import pprint
 import operator
@@ -12,10 +10,9 @@ import ujson
 import psycopg2
 from psycopg2.extras import execute_values
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
-from utils import create_schema, insert_rows
+from mapping.utils import create_schema, insert_rows
 
-#sys.path.append("..")
-from .. import config
+import config
 
 
 BATCH_SIZE = 5000
@@ -164,7 +161,7 @@ def create_temp_release_table(conn, stats):
     return stats
 
 
-def fetch_recording_pairs():
+def create_pairs():
 
     stats = {}
     stats["started"] = datetime.datetime.utcnow().isoformat()
@@ -248,7 +245,3 @@ def fetch_recording_pairs():
         f.write(ujson.dumps(stats, indent=2) + "\n")
 
     print("done")
-
-
-if __name__ == "__main__":
-    fetch_recording_pairs()

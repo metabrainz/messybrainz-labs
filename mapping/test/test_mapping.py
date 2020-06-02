@@ -1,15 +1,13 @@
-#!/usr/bin/env python3
-
 import sys
 import re
 import csv
 import psycopg2
-sys.path.append("..")
-from config import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS
+import config
+
 
 TEST_MAPPING_QUERY = '''
     SELECT m.mb_release_id
-      FROM musicbrainz.msd_mb_mapping m
+      FROM mapping.msid_mbid_mapping m
      WHERE msb_artist_name = %s 
        AND msb_recording_name = %s
 '''
@@ -20,12 +18,12 @@ def _read_test_data(filename):
          reader = csv.reader(csvfile, delimiter=',', quotechar='"')
          for row in reader:
              if not row:
-                 if USE_MINIMAL_DATASET:
+                 if config.USE_MINIMAL_DATASET:
                      break
                  else:
 
                      continue
-             if REMOVE_NON_WORD_CHARS:
+             if config.REMOVE_NON_WORD_CHARS:
                  row[0] = re.sub(r'\W+', '', row[0])
 
                  row[1] = re.sub(r'\W+', '', row[1])
@@ -43,14 +41,14 @@ def get_mbid_for_release_id(curs, release_id):
 def test_mapping():
     ''' This test will actually run as many test as there are in the CSV file '''
 
-    data = _read_test_data("bin/test/mapping_test_cases.csv")
+    data = _read_test_data("mapping/test/mapping_test_cases.csv")
 
     passed = 0
     failed = 0
 
-    with psycopg2.connect('dbname=musicbrainz_db user=musicbrainz host=musicbrainz-docker_db_1 password=musicbrainz') as mb_conn:
+    with psycopg2.connect(config.DB_CONNECT_MB) as mb_conn:
         with mb_conn.cursor() as mb_curs:
-            with psycopg2.connect('dbname=messybrainz_db user=msbpw host=musicbrainz-docker_db_1 password=messybrainz') as conn:
+            with psycopg2.connect(config.DB_CONNECT_MB) as conn:
                 with conn.cursor() as curs:
                     for rdata in data:
                         curs.execute(TEST_MAPPING_QUERY, (rdata[1], rdata[0]))
@@ -69,6 +67,3 @@ def test_mapping():
                             passed += 1
 
     print("%d passed, %d failed." % (passed, failed))
-
-if __name__ == "__main__":
-    test_mapping()

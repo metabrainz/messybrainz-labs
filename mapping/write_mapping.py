@@ -21,14 +21,14 @@ SELECT_QUERY = """
     SELECT DISTINCT msb_recording_msid, mb_recording_id,
                     msb_artist_msid, mb_artist_credit_id,
                     msb_release_msid, mb_release_id
-               FROM mapping.msd_mb_mapping
+               FROM mapping.msid_mbid_mapping
 """;
 
 SELECT_QUERY_WITH_TEXT = """
     SELECT DISTINCT msb_recording_msid, mb_recording_id, msb_recording_name,
                     msb_artist_msid, mb_artist_credit_id, msb_artist_name,
                     msb_release_msid, mb_release_id, msb_release_name
-               FROM mapping.msd_mb_mapping
+               FROM mapping.msid_mbid_mapping
 """;
 
 SELECT_XREF_QUERY = """SELECT id, gid FROM %s"""
