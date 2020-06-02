@@ -1,5 +1,6 @@
 from time import asctime
 import psycopg2
+from psycopg2.extras import execute_values
 
 
 def create_schema(conn):
@@ -17,13 +18,10 @@ def create_schema(conn):
         conn.rollback()
 
 
-def insert_rows(curs, table, values):
-    '''
-        Use the bulk insert function to insert rows into the relations table.
-    '''
-
-    query = ("INSERT INTO %s VALUES " % table) + ",".join(values)
-    try:
-        curs.execute(query)
-    except psycopg2.OperationalError:
-        print(asctime(), "failed to insert rows")
+def insert_rows(curs, table, values): 
+ 
+    query = "INSERT INTO " + table + " VALUES %s" 
+    try: 
+        execute_values(curs, query, values, template=None) 
+    except psycopg2.OperationalError as err: 
+        print("failed to insert rows", err)

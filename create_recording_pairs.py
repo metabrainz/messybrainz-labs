@@ -13,7 +13,7 @@ from time import time
 from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from settings import USE_MINIMAL_DATASET, REMOVE_NON_WORD_CHARS
 import config
-from utils import create_schema
+from utils import create_schema, insert_rows
 
 BATCH_SIZE = 5000
 
@@ -132,16 +132,6 @@ def create_tables(mb_conn):
         mb_conn.rollback()
 
 
-
-def insert_rows(curs, values):
-
-    query = "INSERT INTO mapping.recording_artist_credit_pairs VALUES %s"
-    try:
-        execute_values(curs, query, values, template=None)
-    except psycopg2.OperationalError as err:
-        print("failed to insert rows", err)
-
-
 def create_indexes(conn):
     try:
         with conn.cursor() as curs:
@@ -200,7 +190,7 @@ def fetch_recording_pairs():
                     count = 0
                     print("Run fetch recordings query")
                     mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY)
-                    print("Fetch recordings and insert to MSB")
+                    print("Fetch recordings and insert")
                     while True:
                         row = mb_curs.fetchone()
                         if not row:
@@ -215,7 +205,7 @@ def fetch_recording_pairs():
                             artist_recordings = {}
 
                             if len(rows) > BATCH_SIZE:
-                                insert_rows(mb_curs2, rows)
+                                insert_rows(mb_curs2, "mapping.recording_artist_credit_pairs", rows)
                                 count += len(rows)
                                 mb_conn.commit()
                                 print("inserted %d rows." % count)
@@ -238,7 +228,7 @@ def fetch_recording_pairs():
 
                     rows.extend(artist_recordings.values())
                     if rows:
-                        insert_rows(mb_curs2, rows)
+                        insert_rows(mb_curs2, "mapping.recording_artist_credit_pairs", rows)
                         mb_conn.commit()
                         count += len(rows)
 
