@@ -174,15 +174,14 @@ def dump_mapping(dest_dir, timestamp, include_text, include_matchable, partial =
 
 
 def write_hashes(dump_file):
-    dest_file = os.path.join(dump_file, ".md5")
+    dest_file = dump_file + ".md5"
     run(['md5sum ' + dump_file + ' > ' + dest_file], shell=True)
-    dest_file = os.path.join(dump_file, ".sha256")
+    dest_file = dump_file + ".sha256"
     run(['sha256sum ' + dump_file + ' > ' + dest_file], shell=True)
 
 
-def write_mapping(dest_dir, with_text=False, with_matchable=False):
+def write_mapping(dest_dir, timestamp, with_text=False, with_matchable=False):
 
-    ts = ("%06d" % (int(time.time() % 1000000)))
     dest_dir = os.path.join(dest_dir, "mappings", "msid-mbid-mapping")
     try:
         os.makedirs(dest_dir)
@@ -191,10 +190,11 @@ def write_mapping(dest_dir, with_text=False, with_matchable=False):
     except OSError as err:
         print("Cannot access/create dest_dir: ", str(err))
 
-    dump_mapping(dest_dir, ts, with_text, with_matchable)
+    dump_mapping(dest_dir, timestamp, ts, with_text, with_matchable)
 
 
 def write_all_mappings(dest_dir):
-    write_mapping(dest_dir, with_text=False, with_matchable=False) 
-    write_mapping(dest_dir, with_text=True, with_matchable=False) 
-    write_mapping(dest_dir, with_text=True, with_matchable=True)
+    ts = ("%06d" % (int(time.time() % 1000000)))
+    write_mapping(dest_dir, ts, with_text=False, with_matchable=False) 
+    write_mapping(dest_dir, ts, with_text=True, with_matchable=False) 
+    write_mapping(dest_dir, ts, with_text=True, with_matchable=True)
