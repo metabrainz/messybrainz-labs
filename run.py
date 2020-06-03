@@ -4,23 +4,35 @@ import sys
 
 import click
 
-from mapping.msid_mapping import create_mapping
-from mapping.recording_pairs import create_pairs
-from mapping.test.test_mapping import test_mapping
-from mapping.test.test_pairs import test_pairs
+from mapping.msid_mapping import create_mapping as action_create_mapping
+from mapping.recording_pairs import create_pairs as action_create_pairs
+from mapping.test.test_mapping import test_mapping as action_test_mapping
+from mapping.test.test_pairs import test_pairs as action_test_pairs
+from mapping.write_mapping import write_all_mappings as action_write_all_mappings
+
+@click.group()
+def cli():
+    pass
+
+@cli.command()
+def create_mapping():
+    action_create_mapping()
 
 
-@click.command()
-@click.argument("action", nargs=1)
-def mapping(action):
-    if action == 'create-mapping':
-        create_mapping()
-    elif action == 'create-pairs':
-        create_pairs() 
-    elif action == 'test':
-        test_mapping() 
-    else:
-        print("unknown action: %s" % action)
+@cli.command()
+def create_pairs():
+    action_create_pairs()
+
+
+@cli.command()
+def test_mapping():
+    action_test_mapping()
+
+
+@cli.command()
+@click.argument("dest_dir", nargs=1)
+def write(dest_dir):
+    action_write_all_mappings(dest_dir)
 
 
 def usage(command):
@@ -29,5 +41,5 @@ def usage(command):
 
 
 if __name__ == "__main__":
-    mapping()
+    cli()
     sys.exit(0)

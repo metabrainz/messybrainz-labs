@@ -6,6 +6,12 @@ DB_CONNECT_MB = "dbname=musicbrainz_db user=musicbrainz host=localhost port=2543
 DB_CONNECT_MSB = "dbname=messybrainz user=messybrainz host=localhost port=25432 password=messybrainz"
 
 # Mapping specific settings
-USE_MINIMAL_DATASET = True  # For debugging, only fetches a tiny portion of the data if True
-REMOVE_NON_WORD_CHARS = True  # Turn this off during debugging, it makes the test data easier to read
-SHOW_MATCHES = False  # Show matches as the algorithms go
+
+# For debugging, only fetches a tiny portion of the data if True
+USE_MINIMAL_DATASET = False  
+
+# Turn this off during debugging, it makes the test data easier to read
+REMOVE_NON_WORD_CHARS = True  
+
+# Show matches as the algorithms go
+SHOW_MATCHES = False  

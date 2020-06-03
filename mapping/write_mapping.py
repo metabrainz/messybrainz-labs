@@ -7,6 +7,7 @@ import bz2
 import ujson
 import tarfile
 from tempfile import mkstemp
+from subprocess import run
 
 import click
 import psycopg2
@@ -15,7 +16,8 @@ import psycopg2.extras
 sys.path.append("..")
 import config
 
-DUMP_FILE = "msid-mbid-mapping%s.tar.bz2"
+
+DUMP_FILE = "msid-mbid-mapping%s"
 
 SELECT_QUERY = """
     SELECT DISTINCT msb_recording_msid, mb_recording_id,
@@ -83,8 +85,7 @@ def load_artist_credit_xref():
     return index
 
 
-
-def dump_mapping(include_text, include_matchable, partial = False):
+def dump_mapping(dest_dir, timestamp, include_text, include_matchable, partial = False):
 
     print("load artist index...")
     artist_credit_index = load_artist_credit_xref()
@@ -99,6 +100,12 @@ def dump_mapping(include_text, include_matchable, partial = False):
         filename = DUMP_FILE % "-with-text"
     else:
         filename = DUMP_FILE % ""
+
+    dt = datetime.datetime.now()
+    filename += "-" + dt.strftime("%Y%m%d")
+    filename += "-" + timestamp
+    filename += ".tar.bz2"
+    filename = os.path.join(dest_dir, filename)
 
     count = 0
     fh, temp_file = mkstemp()
@@ -146,7 +153,7 @@ def dump_mapping(include_text, include_matchable, partial = False):
                     if count % 1000000 == 0:
                         print("recording: wrote %d lines" % count)
 
-    print("create tar file...")
+    print("create tar file %s" % filename)
     with tarfile.open(filename, "w:bz2") as tf:
         tf.add(temp_file, os.path.join('msbdump', 'msid-mbid-mapping.json'))
         tf.add('admin/data_dump_files/COPYING', 'COPYING')
@@ -164,15 +171,29 @@ def dump_mapping(include_text, include_matchable, partial = False):
         os.unlink(temp_file)
 
 
-@click.command()
-@click.option('--with-text', '-t', is_flag=True, default=False)
-@click.option('--with-matchable', '-t', is_flag=True, default=False)
-def dump(**opts):
-    if opts['with_matchable']:
-        opts['with_text'] = True
-    dump_mapping(opts['with_text'], opts['with_matchable'])
+def write_hashes(dump_file):
+    dest_file = os.path.join(dump_file, ".md5")
+    run(['md5sum ' + dump_file + ' > ' + dest_file], shell=True)
+    dest_file = os.path.join(dump_file, ".sha256")
+    run(['sha256sum ' + dump_file + ' > ' + dest_file], shell=True)
 
 
-if __name__ == "__main__":
-    dump()
-    sys.exit(0)
+def write_mapping(dest_dir, with_text=False, with_matchable=False):
+
+    ts = ("%06d" % (int(time.time() % 1000000)))
+    dest_dir = os.path.join(dest_dir, "mappings", "msid-mbid-mapping")
+    try:
+        os.makedirs(dest_dir)
+    except FileExistsError:
+        pass
+    except OSError as err:
+        print("Cannot access/create dest_dir: ", str(err))
+
+    dump_mapping(dest_dir, ts, with_text, with_matchable)
+    write_hashes(dest_dir)
+
+
+def write_all_mappings(dest_dir):
+    write_mapping(dest_dir, with_text=False, with_matchable=False) 
+    write_mapping(dest_dir, with_text=True, with_matchable=False) 
+    write_mapping(dest_dir, with_text=True, with_matchable=True)
