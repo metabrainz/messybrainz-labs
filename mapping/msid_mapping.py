@@ -394,5 +394,5 @@ def create_mapping():
     with psycopg2.connect(config.DB_CONNECT_MB) as conn:
         create_indexes(conn)
 
-    with open("mapping-stats.json", "w") as f:
+    with open("stats/mapping-stats.json", "w") as f:
         f.write(ujson.dumps(stats, indent=2) + "\n")

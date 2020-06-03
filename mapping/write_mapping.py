@@ -170,6 +170,8 @@ def dump_mapping(dest_dir, timestamp, include_text, include_matchable, partial =
         tf.add(temp_file, 'TIMESTAMP')
         os.unlink(temp_file)
 
+    write_hashes(filename)
+
 
 def write_hashes(dump_file):
     dest_file = os.path.join(dump_file, ".md5")
@@ -190,7 +192,6 @@ def write_mapping(dest_dir, with_text=False, with_matchable=False):
         print("Cannot access/create dest_dir: ", str(err))
 
     dump_mapping(dest_dir, ts, with_text, with_matchable)
-    write_hashes(dest_dir)
 
 
 def write_all_mappings(dest_dir):

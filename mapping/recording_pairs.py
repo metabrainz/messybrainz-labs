@@ -241,7 +241,7 @@ def create_pairs():
 
 
     stats["completed"] = datetime.datetime.utcnow().isoformat()
-    with open("recording-pairs-stats.json", "w") as f:
+    with open("stats/recording-pairs-stats.json", "w") as f:
         f.write(ujson.dumps(stats, indent=2) + "\n")
 
     print("done")
