@@ -1,0 +1,5 @@
+click==7.1.2
+psycopg2-binary==2.8.5
+ujson==2.0.3
+requests
+-e git+https://github.com/mayhem/data-set-hoster.git#egg=datasethoster
