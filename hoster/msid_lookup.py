@@ -24,8 +24,6 @@ class MSIDLookupQuery(Query):
     def fetch(self, params, offset=-1, limit=-1):
 
         msid = tuple(params['[recording_msid]'])
-        print(msid)
-
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
                 curs.execute("""SELECT DISTINCT ac.name AS mb_artist_name, 

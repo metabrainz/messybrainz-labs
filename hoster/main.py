@@ -3,9 +3,11 @@
 from datasethoster.main import app, register_query
 from msid_mapping import MSIDMappingQuery
 from msid_lookup import MSIDLookupQuery
+from ar_similarity import ArtistCreditSimilarityQuery
 
 register_query(MSIDMappingQuery())
 register_query(MSIDLookupQuery())
+register_query(ArtistCreditSimilarityQuery())
 
 if __name__ == "__main__":
     app.debug = True
