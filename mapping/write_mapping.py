@@ -131,18 +131,18 @@ def dump_mapping(dest_dir, timestamp, include_text, include_matchable, partial =
                         break
 
                     data_dict = { 
+                        "msb_artist_msid" : data["msb_artist_msid"], 
+                        "mb_artist_credit_id" : int(data["mb_artist_credit_id"]),
+                        "mb_artist_credit_mbids" : artist_credit_index[int(data["mb_artist_credit_id"])][1],
+                        "msb_release_msid" : data["msb_release_msid"], 
+                        "mb_release_mbid" : release_index[int(data["mb_release_id"])][0],
                         "msb_recording_msid" : data["msb_recording_msid"], 
                         "mb_recording_mbid" : recording_index[int(data["mb_recording_id"])][0], 
-                        "msb_artist_msid" : data["msb_artist_msid"], 
-                        "mb_artist_credit_mbids" : artist_credit_index[int(data["mb_artist_credit_id"])][1],
-                        "mb_artist_credit_id" : int(data["mb_artist_credit_id"]),
-                        "msb_release_msid" : data["msb_release_msid"], 
-                        "mb_release_mbid" : release_index[int(data["mb_release_id"])][0]
                     }
                     if include_text:
-                        data_dict["msb_recording_name"] = recording_index[int(data["mb_recording_id"])][1]
-                        data_dict["msb_artist_credit_name"] = artist_credit_index[int(data["mb_artist_credit_id"])][0]
-                        data_dict["msb_release_name"] = release_index[int(data["mb_release_id"])][1]
+                        data_dict["mb_recording_name"] = recording_index[int(data["mb_recording_id"])][1]
+                        data_dict["mb_artist_credit_name"] = artist_credit_index[int(data["mb_artist_credit_id"])][0]
+                        data_dict["mb_release_name"] = release_index[int(data["mb_release_id"])][1]
                     if include_matchable:
                         data_dict["msb_recording_name_matchable"] = data["msb_recording_name"] 
                         data_dict["msb_artist_credit_name_matchable"] = data["msb_artist_name"]
@@ -190,7 +190,7 @@ def write_mapping(dest_dir, timestamp, with_text=False, with_matchable=False):
     except OSError as err:
         print("Cannot access/create dest_dir: ", str(err))
 
-    dump_mapping(dest_dir, timestamp, ts, with_text, with_matchable)
+    dump_mapping(dest_dir, timestamp, with_text, with_matchable)
 
 
 def write_all_mappings(dest_dir):
