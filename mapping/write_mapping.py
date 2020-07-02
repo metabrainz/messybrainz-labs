@@ -146,7 +146,6 @@ def dump_mapping(dest_dir, timestamp, include_text, include_matchable, partial =
                     if include_matchable:
                         data_dict["msb_recording_name_matchable"] = data["msb_recording_name"] 
                         data_dict["msb_artist_credit_name_matchable"] = data["msb_artist_name"]
-                        data_dict["msb_release_name_matchable"] = data["msb_release_name"]
 
                     f.write(ujson.dumps(data_dict) + "\n")
                     count += 1

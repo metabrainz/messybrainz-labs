@@ -45,9 +45,7 @@ MATCHABLE:
    ],
    "msb_artist_credit_name_matchable" : "西木康智",
    "msb_artist_credit_name" : "西木康智",
-   "msb_release_name" : "OCTOPATH TRAVELER Arrangements Break & Boost",
    "msb_recording_name_matchable" : "theywhogovernreason",
-   "msb_release_name_matchable" : "octopathtraveleroriginalsoundtrack",
    "msb_artist_msid" : "ad17e3d3-2121-4b01-b518-4741626f1997",
    "mb_artist_credit_id" : 2157963,
    "mb_recording_mbid" : "3acb406f-c716-45f8-a8bd-96ca3939c2e5",
@@ -61,7 +59,6 @@ FULL:
 {
    "msb_artist_msid" : "ad17e3d3-2121-4b01-b518-4741626f1997",
    "msb_release_msid" : "c1219e64-768b-4dcc-9c72-daffa0349fbd",
-   "msb_release_name" : "OCTOPATH TRAVELER Arrangements Break & Boost",
    "msb_recording_name" : "They Who Govern Reason",
    "mb_artist_credit_id" : 2157963,
    "msb_recording_msid" : "00000299-24d2-43c3-9ae0-6675cb590544",
