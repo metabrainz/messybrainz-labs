@@ -6,10 +6,10 @@ from datasethoster import Query
 from datasethoster.main import app, register_query
 import config
 
-class ArtistCreditLookupQuery(Query):
+class ArtistCreditNameLookupQuery(Query):
 
     def names(self):
-        return ("artist-credit-lookup", "MusicBrainz Artist Credit Lookup")
+        return ("artist-credit-name-lookup", "MusicBrainz Artist Credit Name Lookup")
 
     def inputs(self):
         return ['[artist_credit_name]']

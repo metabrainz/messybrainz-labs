@@ -21,7 +21,7 @@ class ArtistCreditRecordingPairsLookupQuery(Query):
 
     def outputs(self):
         return ['artist_credit_name', 'release_name', 'recording_name', 
-                'artist_credit_id', 'release_id', 'recording_id']
+                'artist_credit_id', 'release_mbid', 'recording_mbid']
 
     def fetch(self, params, offset=-1, limit=-1):
         artists = []
@@ -39,8 +39,8 @@ class ArtistCreditRecordingPairsLookupQuery(Query):
                 curs.execute("""SELECT DISTINCT ac.name AS artist_credit_name, 
                                        rl.name AS release_name, 
                                        r.name AS recording_name,
-                                       rl.id AS release_id,
-                                       r.id AS recording_id,
+                                       rl.gid AS release_mbid,
+                                       r.gid AS recording_mbid,
                                        artist_credit_id
                                   FROM mapping.recording_artist_credit_pairs
                                   JOIN recording r
