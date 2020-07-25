@@ -44,8 +44,6 @@ class ArtistCreditIdLookupQuery(Query):
                     if not row:
                         break
 
-                    r = dict(row)
-                    r['artist_credit_mbids'] = r['artist_credit_mbids'][1:-1].split(",")
-                    acs.append(r)
+                    acs.append(dict(row))
 
                 return acs
