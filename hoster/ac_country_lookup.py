@@ -19,7 +19,7 @@ class ArtistCreditCountryLookupQuery(Query):
         return """Given artist credit ids look up areas for those artists."""
 
     def outputs(self):
-        return ['artist_credit_id', 'area_code']
+        return ['artist_credit_id', 'country_code']
 
     def fetch(self, params, offset=-1, limit=-1):
 
@@ -28,7 +28,8 @@ class ArtistCreditCountryLookupQuery(Query):
 
                 acs = tuple(params['[artist_credit_id]'])
                 curs.execute(""" SELECT ac.id AS artist_credit_id, 
-                                        array_agg(code) AS area_code
+                                        array_agg(ar.id) AS area_id,
+                                        array_agg(code) AS country_code
                                    FROM artist_credit ac 
                                    JOIN artist_credit_name acn 
                                      ON ac.id = acn.artist_credit 
@@ -36,18 +37,52 @@ class ArtistCreditCountryLookupQuery(Query):
                                      ON acn.artist = a.id 
                                    JOIN area ar 
                                      ON a.area = ar.id
-                                   JOIN iso_3166_1 i
-                                     ON i.area = a.area
-                                  WHERE ac.id in %s
-                               GROUP BY ac.id, ar.name""", (acs,))
-                acs = []
+                       FULL OUTER JOIN iso_3166_1 iso 
+                                     ON iso.area = ar.id
+                                  WHERE ac.id IN %s
+                               GROUP BY ac.id, ar.name, iso.code""", (acs,))
+                areas = []
+                mapping = []
                 while True:
                     row = curs.fetchone()
                     if not row:
                         break
 
                     r = dict(row)
-                    r['area_code'] = ",".join(r['area_code'])
-                    acs.append(r)
+                    areas.extend(r['area_id'])
+                    mapping.append(dict(row))
 
-                return acs
+                areas = tuple(areas)
+                curs.execute("""WITH RECURSIVE area_descendants AS (
+                                        SELECT entity0 AS parent, entity1 AS descendant, 1 AS depth
+                                          FROM l_area_area laa
+                                          JOIN link ON laa.link = link.id
+                                         WHERE link.link_type = 356
+                                           AND entity1 IN %s 
+                                         UNION
+                                        SELECT entity0 AS parent, descendant, (depth + 1) AS depth
+                                          FROM l_area_area laa
+                                          JOIN link ON laa.link = link.id
+                                          JOIN area_descendants ON area_descendants.parent = laa.entity1
+                                         WHERE link.link_type = 356
+                                           AND entity0 != descendant
+                                        )
+                                        SELECT descendant AS area, iso.code AS country_code
+                                          FROM area_descendants ad
+                                          JOIN iso_3166_1 iso ON iso.area = ad.parent""", (areas,))
+                area_index = {}
+                while True:
+                    row = curs.fetchone()
+                    if not row:
+                        break
+
+                    r = dict(row)
+                    area_index[r['area']] = r['country_code']
+
+                result = []
+                for i, row in enumerate(mapping):
+                    for j, (area, code) in enumerate(zip(row['area_id'], row['country_code'])):
+                        if not code:
+                            mapping[i]['country_code'][j] = area_index[area]
+
+                return mapping
