@@ -10,6 +10,7 @@ from ac_id_lookup import ArtistCreditIdLookupQuery
 from acrp_lookup import ArtistCreditRecordingPairsLookupQuery
 from recording_lookup import RecordingLookupQuery
 from ac_country_lookup import ArtistCreditCountryLookupQuery
+from artist_mbid_to_ac_lookup import ArtistCreditIdLookupQuery
 
 register_query(MSIDMappingQuery())
 register_query(MSIDLookupQuery())
@@ -20,6 +21,7 @@ register_query(ArtistCreditIdLookupQuery())
 register_query(ArtistCreditRecordingPairsLookupQuery())
 register_query(RecordingLookupQuery())
 register_query(ArtistCreditCountryLookupQuery())
+register_query(ArtistCreditIdLookupQuery())
 
 if __name__ == "__main__":
     app.debug = True
