@@ -13,7 +13,7 @@ class MSIDMappingQuery(Query):
         return ("msid-mapping", "MessyBrainz <=> MusicBrainz Mapping")
 
     def inputs(self):
-        return ['[msb_artist_credit_name]', '[msb_recording_name]']
+        return ['msb_artist_credit_name', 'msb_recording_name']
 
     def introduction(self):
         return """This page allows you to enter the name of an artist and the name of a recording (track)
@@ -25,19 +25,15 @@ class MSIDMappingQuery(Query):
                 'mb_release_mbid', 'mb_recording_mbid', 'mb_artist_credit_id']
 
     def fetch(self, params, offset=-1, limit=-1):
-        artists = []
-        for artist in params['[msb_artist_credit_name]']:
-            artists.append("".join(artist.lower().split()))
-        artists = tuple(artists)
-
-        recordings = []
-        for recording in params['[msb_recording_name]']:
-            recordings.append("".join(recording.lower().split()))
-        recordings  = tuple(recordings)
 
         args = []
-        for i, (artist, recording) in enumerate(zip(artists, recordings)):
-            args.append(tuple((i, artist, recording)))
+        for i, param in enumerate(params):
+            args.append(tuple((i, 
+                               "".join(param['msb_artist_credit_name'].lower().split()), 
+                               "".join(param['msb_recording_name'].lower().split())
+                              )
+                             )
+                       )
         args = tuple(args)
 
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
@@ -64,8 +60,6 @@ class MSIDMappingQuery(Query):
                     data = curs.fetchone()
                     if not data:
                         break
-
-                    print(data)
 
                     results.append(dict(data))
 

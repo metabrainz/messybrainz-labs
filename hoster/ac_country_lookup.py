@@ -13,7 +13,7 @@ class ArtistCreditCountryLookupQuery(Query):
         return ("artist-credit-id-country-code", "MusicBrainz Artist Credit Country Lookup")
 
     def inputs(self):
-        return ['[artist_credit_id]']
+        return ['artist_credit_id']
 
     def introduction(self):
         return """Given artist credit ids look up areas for those artists."""
@@ -26,7 +26,7 @@ class ArtistCreditCountryLookupQuery(Query):
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
 
-                acs = tuple(params['[artist_credit_id]'])
+                acs = tuple([ r['artist_credit_id'] for r in params ])
                 curs.execute(""" SELECT ac.id AS artist_credit_id, 
                                         array_agg(ar.id) AS area_id,
                                         array_agg(code) AS country_code

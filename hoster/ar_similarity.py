@@ -42,8 +42,9 @@ class ArtistCreditSimilarityQuery(Query):
 
     def fetch(self, params, offset=-1, limit=-1):
 
-        ac_ids = tuple(params['[artist_credit_id]'])
-        threshold = int(params['threshold'])
+        ac_ids = tuple([ p['[artist_credit_id]'] for p in params ])
+        threshold = int(params[0]['threshold'])
+
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
 

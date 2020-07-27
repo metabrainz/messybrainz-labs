@@ -18,18 +18,18 @@ class RecordingLookupQuery(Query):
         return ("recording-mbid-lookup", "MusicBrainz Recording by MBID Lookup")
 
     def inputs(self):
-        return ['[recording_mbid]']
+        return ['recording_mbid']
 
     def introduction(self):
         return """Look up recording and artist information given a recording MBID"""
 
     def outputs(self):
         return ['recording_mbid', 'recording_name', 'length', 'comment', 
-                'artist_credit_id', 'artist_credit_name', 'artist_credit_mbids']
+                'artist_credit_id', 'artist_credit_name', '[artist_credit_mbids]']
 
     def fetch(self, params, offset=-1, limit=-1):
 
-        mbids = tuple([ psycopg2.extensions.adapt(r) for r in params['[recording_mbid]'] ])
+        mbids = tuple([ psycopg2.extensions.adapt(p['recording_mbid']) for p in params ])
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
                 curs.execute('''SELECT r.gid AS recording_mbid, r.name AS recording_name, r.length, r.comment, 
@@ -53,7 +53,9 @@ class RecordingLookupQuery(Query):
                         break
 
                     r = dict(row)
-#                    r['artist_credit_mbids'] = r['artist_credit_mbids'][1:-1].split(",")
+                    r['recording_mbid'] = str(r['recording_mbid'])
+                    r['[artist_credit_mbids]'] = [ str(r) for r in r['artist_credit_mbids'] ]
+                    del r['artist_credit_mbids']
                     output.append(r)
 
         return output

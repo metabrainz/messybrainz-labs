@@ -13,7 +13,7 @@ class ArtistCreditIdLookupQuery(Query):
         return ("artist-credit-id-lookup", "MusicBrainz Artist Credit Id Lookup")
 
     def inputs(self):
-        return ['[artist_credit_id]']
+        return ['artist_credit_id']
 
     def introduction(self):
         return """Look up artists from their credit ids. Returns artist_credit_name and artist mbids."""
@@ -26,7 +26,7 @@ class ArtistCreditIdLookupQuery(Query):
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
 
-                acs = tuple(params['[artist_credit_id]'])
+                acs = tuple([ r['artist_credit_id'] for r in params ])
                 curs.execute("""SELECT ac.id AS artist_credit_id, 
                                        ac.name AS artist_credit_name, 
                                        array_agg(a.gid) AS artist_credit_mbids

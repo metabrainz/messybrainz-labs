@@ -12,7 +12,7 @@ class MSIDLookupQuery(Query):
         return ("msid-lookup", "MessyBrainz <=> MusicBrainz Lookup")
 
     def inputs(self):
-        return ['[recording_msid]']
+        return ['recording_msid']
 
     def introduction(self):
         return """This page allows you to enter a MessyBrainz recording id and the query will attempt to find a 
@@ -23,7 +23,7 @@ class MSIDLookupQuery(Query):
 
     def fetch(self, params, offset=-1, limit=-1):
 
-        msid = tuple(params['[recording_msid]'])
+        msid = tuple([ p['recording_msid'] for p in params ])
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
                 curs.execute("""SELECT DISTINCT ac.name AS mb_artist_name, 

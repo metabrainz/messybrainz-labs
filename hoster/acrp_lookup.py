@@ -13,7 +13,7 @@ class ArtistCreditRecordingPairsLookupQuery(Query):
         return ("acrp-lookup", "MusicBrainz Artist Credit Recording Pairs lookup")
 
     def inputs(self):
-        return ['[artist_credit_name]', '[recording_name]']
+        return ['artist_credit_name', 'recording_name']
 
     def introduction(self):
         return """This page allows you to enter the name of an artist and the name of a recording (track)
@@ -25,13 +25,11 @@ class ArtistCreditRecordingPairsLookupQuery(Query):
 
     def fetch(self, params, offset=-1, limit=-1):
         artists = []
-        for artist in params['[artist_credit_name]']:
-            artists.append("".join(artist.lower().split()))
-        artists = tuple(artists)
-
         recordings = []
-        for recording in params['[recording_name]']:
-            recordings.append("".join(recording.lower().split()))
+        for param in params:
+            artists.append("".join(param['artist_credit_name'].lower().split()))
+            recordings.append("".join(param['recording_name'].lower().split()))
+        artists = tuple(artists)
         recordings = tuple(recordings)
 
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:

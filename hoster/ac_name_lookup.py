@@ -12,7 +12,7 @@ class ArtistCreditNameLookupQuery(Query):
         return ("artist-credit-name-lookup", "MusicBrainz Artist Credit Name Lookup")
 
     def inputs(self):
-        return ['[artist_credit_name]']
+        return ['artist_credit_name']
 
     def introduction(self):
         return """Look up artist credit ids from artist names. Artist names must be spelled
@@ -23,14 +23,13 @@ class ArtistCreditNameLookupQuery(Query):
 
     def fetch(self, params, offset=-1, limit=-1):
 
-        ac_names = []
-        for ac in params['[artist_credit_name]']:
-            ac_names.append(ac.lower())
-
+        ac_names = [ p['artist_credit_name'].lower() for p in params ]
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
 
-                curs.execute("""SELECT ac.id, ac.name, a.comment
+                curs.execute("""SELECT ac.id AS artist_credit_id, 
+                                       ac.name AS artist_credit_name, 
+                                       a.comment AS disambiguation
                                   FROM musicbrainz.artist_credit ac
                                   JOIN musicbrainz.artist a
                                     ON ac.id = a.id
@@ -42,8 +41,6 @@ class ArtistCreditNameLookupQuery(Query):
                     if not row:
                         break
 
-                    acs.append(dict({ 'artist_credit_id' : row['id'],
-                                      'artist_credit_name' : row['name'],
-                                      'disambiguation' : row['comment']}))
+                    acs.append(dict(row))
 
                 return acs
