@@ -48,7 +48,9 @@ class ArtistMSIDLookupQuery(Query):
                         break
 
                     r = dict(row)
-                    r['[artist_credit_mbids]'] = r['artist_credit_mbids'][1:-1].split(",")
+                    print(r)
+                    r['[artist_msid]'] = str(r['artist_credit_mbids'])
+                    r['[artist_credit_mbids]'] = [ str(u) for u in r['artist_credit_mbids'] ]
                     del r['artist_credit_mbids']
                     results.append(r)
 
