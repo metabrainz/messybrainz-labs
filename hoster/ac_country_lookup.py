@@ -1,9 +1,11 @@
 from operator import itemgetter
 
-import psycopg2
-import psycopg2.extras
 from datasethoster import Query
 from datasethoster.main import app, register_query
+import psycopg2
+import psycopg2.extras
+from werkzeug.exceptions import NotFound
+
 import config
 
 
@@ -16,7 +18,9 @@ class ArtistCreditCountryLookupQuery(Query):
         return ['artist_credit_id']
 
     def introduction(self):
-        return """Given artist credit ids look up areas for those artists."""
+        return """Given artist credit ids look up areas for those artists. Any artist_credit_ids
+                  not found in the database will be omitted from the results. If none are
+                  found a 404 error is returned."""
 
     def outputs(self):
         return ['artist_credit_id', 'country_code']
@@ -51,6 +55,9 @@ class ArtistCreditCountryLookupQuery(Query):
                     r = dict(row)
                     areas.extend(r['area_id'])
                     mapping.append(dict(row))
+
+                if not areas:
+                    raise NotFound("None of the given artist_credits_ids were found.")
 
                 areas = tuple(areas)
                 curs.execute("""WITH RECURSIVE area_descendants AS (
