@@ -84,6 +84,6 @@ class ArtistCountryLookupQuery(Query):
                 result = []
                 for i, row in enumerate(mapping):
                     if not row['country_code']:
-                        mapping[i]['country_code'] = area_index[row['area']]
+                        mapping[i]['country_code'] = area_index[row['area_id']]
 
                 return mapping
