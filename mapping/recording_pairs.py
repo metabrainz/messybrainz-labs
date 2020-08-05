@@ -13,6 +13,7 @@ from psycopg2.errors import OperationalError, DuplicateTable, UndefinedObject
 from mapping.utils import create_schema, insert_rows
 
 import config
+from mapping.formats import create_formats_table
 
 
 BATCH_SIZE = 5000
@@ -37,7 +38,7 @@ FULL OUTER JOIN musicbrainz.release_group_secondary_type rgst ON rgstj.secondary
      %s
    ORDER BY
             rg.type, rgst.id desc, fs.sort, 
-            to_date(coalesce(date_year, 9999)::TEXT || '-' || coalesce(date_month, 12)::TEXT || '-' || coalesce(date_day, 31)::TEXT, 'YYYY-MM-DD'), 
+            to_date(coalesce(date_year, 9999)::TEXT || '-' || coalesce(date_month, 1)::TEXT || '-' || coalesce(date_day, 1)::TEXT, 'YYYY-MM-DD'), 
             country, rg.artist_credit, rg.name
 '''
 SELECT_RELEASES_QUERY_WHERE_CLAUSE = 'AND rg.artist_credit = 1160983'
@@ -105,7 +106,7 @@ def create_tables(mb_conn):
     try:
         with mb_conn.cursor() as curs:
             curs.execute(CREATE_RECORDING_PAIRS_TABLE_QUERY)
-            curs.execute("ALTER TABLE mapping.recording_artist_credit_pairs OWNER TO messybrainz")
+            curs.execute("ALTER TABLE mapping.recording_artist_credit_pairs OWNER TO musicbrainz")
         mb_conn.commit()
 
     except OperationalError as err:
@@ -124,10 +125,16 @@ def create_tables(mb_conn):
     try:
         with mb_conn.cursor() as curs:
             curs.execute(CREATE_RECORDING_PAIR_RELEASES_TABLE_QUERY)
-            curs.execute("ALTER TABLE mapping.recording_pair_releases OWNER TO messybrainz")
+            curs.execute("ALTER TABLE mapping.recording_pair_releases OWNER TO musicbrainz")
         mb_conn.commit()
 
     except OperationalError as err:
+        print("failed to create recording pair releases table")
+        mb_conn.rollback()
+
+    try:
+        create_formats_table(mb_conn)
+    except (psycopg2.errors.OperationalError, psycopg2.errors.UndefinedTable) as err:
         print("failed to create recording pair releases table")
         mb_conn.rollback()
 
@@ -169,75 +176,74 @@ def create_pairs():
 
     with psycopg2.connect(config.DB_CONNECT_MB) as mb_conn:
         with mb_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as mb_curs:
-            with psycopg2.connect(config.DB_CONNECT_MSB) as msb_conn:
 
-                # Create the dest table (perhaps dropping the old one first)
-                print("Drop/create pairs table")
-                create_schema(mb_conn)
-                create_tables(mb_conn)
+            # Create the dest table (perhaps dropping the old one first)
+            print("Drop/create pairs table")
+            create_schema(mb_conn)
+            create_tables(mb_conn)
 
-                print("select releases from MB")
-                stats = create_temp_release_table(mb_conn, stats)
+            print("select releases from MB")
+            stats = create_temp_release_table(mb_conn, stats)
 
-                mb_curs.execute("SELECT COUNT(*) from musicbrainz.recording")
-                stats["mb_recording_count"] = mb_curs.fetchone()[0]
+            mb_curs.execute("SELECT COUNT(*) from musicbrainz.recording")
+            stats["mb_recording_count"] = mb_curs.fetchone()[0]
 
-                with mb_conn.cursor() as mb_curs2:
+            with mb_conn.cursor() as mb_curs2:
 
-                    rows = []
-                    last_ac_id = None
-                    artist_recordings = {}
-                    count = 0
-                    print("Run fetch recordings query")
-                    mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY)
-                    print("Fetch recordings and insert")
-                    while True:
-                        row = mb_curs.fetchone()
-                        if not row:
-                            break
+                rows = []
+                last_ac_id = None
+                artist_recordings = {}
+                count = 0
+                print("Run fetch recordings query")
+                mb_curs.execute(SELECT_RECORDING_PAIRS_QUERY)
+                print("Fetch recordings and insert")
+                while True:
+                    row = mb_curs.fetchone()
+                    if not row:
+                        break
 
-                        if not last_ac_id:
-                            last_ac_id = row['artist_credit_id']
-
-                        if row['artist_credit_id'] != last_ac_id:
-                            # insert the rows that made it
-                            rows.extend(artist_recordings.values())
-                            artist_recordings = {}
-
-                            if len(rows) > BATCH_SIZE:
-                                insert_rows(mb_curs2, "mapping.recording_artist_credit_pairs", rows)
-                                count += len(rows)
-                                mb_conn.commit()
-                                print("inserted %d rows." % count)
-                                rows = []
-
-                        recording_name = row['recording_name']
-                        artist_credit_name = row['artist_credit_name']
-                        release_name = row['release_name']
-                        if config.REMOVE_NON_WORD_CHARS:
-                            recording_name = re.sub(r'\W+', '', recording_name)
-                        if recording_name not in artist_recordings:
-                            if config.REMOVE_NON_WORD_CHARS:
-                                artist_credit_name = re.sub(r'\W+', '', artist_credit_name)
-                                release_name = re.sub(r'\W+', '', release_name)
-                            artist_recordings[recording_name] = (recording_name, row['recording_id'], 
-                                artist_credit_name, row['artist_credit_id'], release_name, row['release_id'])
-
+                    if not last_ac_id:
                         last_ac_id = row['artist_credit_id']
 
+                    if row['artist_credit_id'] != last_ac_id:
+                        # insert the rows that made it
+                        rows.extend(artist_recordings.values())
+                        artist_recordings = {}
 
-                    rows.extend(artist_recordings.values())
-                    if rows:
-                        insert_rows(mb_curs2, "mapping.recording_artist_credit_pairs", rows)
-                        mb_conn.commit()
-                        count += len(rows)
+                        if len(rows) > BATCH_SIZE:
+                            insert_rows(mb_curs2, "mapping.recording_artist_credit_pairs", rows)
+                            count += len(rows)
+                            mb_conn.commit()
+                            print("inserted %d rows." % count)
+                            rows = []
+
+                    recording_name = row['recording_name']
+                    artist_credit_name = row['artist_credit_name']
+                    release_name = row['release_name']
+                    if config.REMOVE_NON_WORD_CHARS:
+                        recording_name = re.sub(r'\W+', '', recording_name)
+                    if recording_name not in artist_recordings:
+                        if config.REMOVE_NON_WORD_CHARS:
+                            artist_credit_name = re.sub(r'\W+', '', artist_credit_name)
+                            release_name = re.sub(r'\W+', '', release_name)
+                        artist_recordings[recording_name] = (recording_name, row['recording_id'], 
+                            artist_credit_name, row['artist_credit_id'], release_name, row['release_id'])
+
+                    last_ac_id = row['artist_credit_id']
 
 
-                print("inserted %d rows total." % count)
-                stats["recording_artist_pair_count"] = count
+                rows.extend(artist_recordings.values())
+                if rows:
+                    insert_rows(mb_curs2, "mapping.recording_artist_credit_pairs", rows)
+                    mb_conn.commit()
+                    count += len(rows)
 
-                print("Create indexes")
-                create_indexes(mb_conn)
+
+            print("inserted %d rows total." % count)
+            stats["recording_artist_pair_count"] = count
+
+            print("Create indexes")
+            create_indexes(mb_conn)
 
 
     stats["completed"] = datetime.datetime.utcnow().isoformat()

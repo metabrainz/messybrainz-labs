@@ -6,7 +6,6 @@ import pprint
 import psycopg2
 import operator
 import ujson
-import psutil
 from uuid import UUID
 import datetime
 import subprocess
@@ -26,9 +25,9 @@ NO_PARENS_SOURCE_NAME = "noparens"
 MSB_BATCH_SIZE = 20000000
 
 SELECT_MSB_RECORDINGS_QUERY = '''
-         SELECT lower(unaccent(rj.data->>'artist'::TEXT)) AS artist_name, artist as artist_msid,
-                lower(unaccent(rj.data->>'title'::TEXT)) AS recording_name, r.gid AS recording_msid,
-                lower(unaccent(rl.title::TEXT)) AS release_name, rl.gid AS release_msid
+         SELECT lower(public.unaccent(rj.data->>'artist'::TEXT)::TEXT) AS artist_name, artist as artist_msid,
+                lower(public.unaccent(rj.data->>'title'::TEXT)::TEXT) AS recording_name, r.gid AS recording_msid,
+                lower(public.unaccent(rl.title::TEXT)::TEXT) AS release_name, rl.gid AS release_msid
            FROM recording r
            JOIN recording_json rj ON r.data = rj.id
 LEFT OUTER JOIN release rl ON r.release = rl.gid
@@ -40,9 +39,9 @@ SELECT_MSB_RECORDINGS_QUERY_WHERE_CLAUSE = '''
 '''
 
 SELECT_MB_RECORDINGS_QUERY = '''
-    SELECT DISTINCT lower(unaccent(artist_credit_name::TEXT)) as artist_credit_name, artist_credit_id,
-                    lower(unaccent(recording_name::TEXT)) AS recording_name, recording_id,
-                    lower(unaccent(release_name::TEXT)) AS release_name, release_id
+    SELECT DISTINCT lower(public.unaccent(artist_credit_name::TEXT)) as artist_credit_name, artist_credit_id,
+                    lower(public.unaccent(recording_name::TEXT)) AS recording_name, recording_id,
+                    lower(public.unaccent(release_name::TEXT)) AS release_name, release_id
       FROM mapping.recording_artist_credit_pairs 
       %s
 '''
@@ -77,11 +76,6 @@ CREATE_MAPPING_INDEXES_QUERIES = [
     "CREATE INDEX msid_mbid_mapping_msb_release_name_ndx ON mapping.msid_mbid_mapping(msb_release_name)",
     "CREATE INDEX msid_mbid_mapping_msb_release_msid_ndx ON mapping.msid_mbid_mapping(msb_release_msid)",
 ]
-
-def mem_stats():
-    process = psutil.Process(os.getpid())
-    return "%d MB" % (process.memory_info().rss / 1024 / 1024)
-
 
 def create_table(conn):
 
@@ -151,7 +145,7 @@ def load_MSB_recordings(stats, offset):
                 })
                 count += 1
                 if count % 1000000 == 0:
-                    print("load MSB %d, %s" % (count, mem_stats()))
+                    print("load MSB %d" % count)
 
     if count == 0:
         return (stats, None)
@@ -196,9 +190,9 @@ def load_MB_recordings(stats):
                 })
                 count += 1
                 if count % 1000000 == 0:
-                    print("load MB %d, %s" % (count, mem_stats()))
+                    print("load MB %d" % count)
 
-    print("sort MB recordings %d items, %s" % (len(mb_recordings), mem_stats()))
+    print("sort MB recordings %d items" % len(mb_recordings))
     mb_recording_index = list(range(len(mb_recordings)))
     mb_recording_index = sorted(mb_recording_index, key=lambda rec: (mb_recordings[rec]["artist_name"], mb_recordings[rec]["recording_name"]))
 
@@ -263,7 +257,7 @@ def match_recordings(msb_recordings, msb_recording_index, mb_recordings, mb_reco
         count += 1
         msb_row = None
         if count % 1000000 == 0:
-            print("%d matches, %s" % (count, mem_stats()))
+            print("%d matches" % count)
 
     print("  mapping found %d matches out of %d (%d%%)" % (
                 len(recording_mapping), 
@@ -307,7 +301,7 @@ def insert_matches(recording_mapping, mb_recordings, msb_recordings, source):
                     rows = []
 
                 if total % 1000000 == 0:
-                    print("  wrote %d of %d, %s" % (total, len(recording_mapping), mem_stats()))
+                    print("  wrote %d of %d" % (total, len(recording_mapping)))
 
             insert_rows(curs, "mapping.msid_mbid_mapping", rows)
             conn.commit()
@@ -354,7 +348,7 @@ def create_mapping():
             if not msb_recordings:
                 break
 
-            print("  sort MSB recordings %d items, %s" % (len(msb_recordings), mem_stats()))
+            print("  sort MSB recordings %d items" % (len(msb_recordings)))
             msb_recording_index = list(range(len(msb_recordings)))
             msb_recording_index = sorted(msb_recording_index, key=lambda rec: (msb_recordings[rec]["artist_name"], msb_recordings[rec]["recording_name"]))
 
