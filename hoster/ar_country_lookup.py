@@ -25,21 +25,33 @@ class ArtistCountryLookupQuery(Query):
     def outputs(self):
         return ['artist_mbid', 'country_code']
 
-    def fetch(self, params, offset=-1, limit=-1):
+    def fetch(self, params, count=-1, offset=-1):
 
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
 
                 acs = tuple([ r['artist_mbid'] for r in params ])
-                curs.execute(""" SELECT a.gid AS artist_mbid, 
-                                        ar.id AS area_id,
-                                        code AS country_code
-                                   FROM artist a 
-                                   JOIN area ar 
-                                     ON a.area = ar.id
-                       FULL OUTER JOIN iso_3166_1 iso 
-                                     ON iso.area = ar.id
-                                  WHERE a.gid IN %s""", (acs,))
+                query = """ SELECT a.gid AS artist_mbid, 
+                                   ar.id AS area_id,
+                                   code AS country_code
+                              FROM artist a 
+                              JOIN area ar 
+                                ON a.area = ar.id
+                  FULL OUTER JOIN iso_3166_1 iso 
+                                ON iso.area = ar.id
+                             WHERE a.gid IN %s
+                          ORDER BY artist_mbid""" 
+
+                args = [acs]
+                if count > 0:
+                    query += " LIMIT %s"
+                    args.append(count)
+                if offset >= 0:
+                    query += " OFFSET %s"
+                    args.append(offset)
+
+                curs.execute(query, tuple(args))
+
                 areas = []
                 mapping = []
                 while True:
@@ -48,6 +60,7 @@ class ArtistCountryLookupQuery(Query):
                         break
 
                     r = dict(row)
+                    print(row)
                     areas.append(r['area_id'])
                     mapping.append(dict(row))
 
@@ -79,6 +92,7 @@ class ArtistCountryLookupQuery(Query):
                         break
 
                     r = dict(row)
+                    print(row)
                     area_index[r['area']] = r['country_code']
 
                 result = []

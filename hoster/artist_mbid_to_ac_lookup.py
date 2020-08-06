@@ -21,22 +21,33 @@ class ArtistCreditIdLookupQuery(Query):
     def outputs(self):
         return ['artist_mbid', 'artist_credit_ids']
 
-    def fetch(self, params, offset=-1, limit=-1):
+    def fetch(self, params, offset=-1, count=-1):
+
+        print(offset, count)
 
         with psycopg2.connect(config.DB_CONNECT_MB) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as curs:
 
                 acs = tuple([ p['artist_mbid'] for p in params ])
-                curs.execute("""SELECT a.gid AS artist_mbid, 
+                query = """SELECT a.gid AS artist_mbid,
                                        array_agg(ac.id) AS artist_credit_ids
-                                  FROM artist_credit ac 
-                                  JOIN artist_credit_name acn 
-                                    ON ac.id = acn.artist_credit 
-                                  JOIN artist a 
-                                    ON acn.artist = a.id 
+                                  FROM artist_credit ac
+                                  JOIN artist_credit_name acn
+                                    ON ac.id = acn.artist_credit
+                                  JOIN artist a
+                                    ON acn.artist = a.id
                                  WHERE a.gid in %s
-                              GROUP BY a.gid 
-                              """, (acs,))
+                              GROUP BY a.gid
+                              ORDER BY artist_mbid"""
+                args = [acs]
+                if count > 0:
+                    query += " LIMIT %s"
+                    args.append(count)
+                if offset >= 0:
+                    query += " OFFSET %s"
+                    args.append(offset)
+
+                curs.execute(query, tuple(args))
                 acs = []
                 while True:
                     row = curs.fetchone()
