@@ -1,3 +1,6 @@
+import psycopg2
+from psycopg2.errors import OperationalError, UndefinedTable
+
 DIGITAL_FORMATS = [
     (1  ,  "CD"),
     (3 , "SACD"),
@@ -88,20 +91,31 @@ ANALOG_FORMATS = [
     (73 , "Phonograph record")
 ]
 
-def output_list(id, formats):
+def insert_rows(id, curs, formats):
 
     for format_id, format in formats:
-        print("INSERT INTO mapping.format_sort values (%d, %s);" % (id, format_id))
+        curs.execute("INSERT INTO mapping.format_sort values (%s, %s);",  tuple((id, format_id)))
         id += 1
 
     return id
 
-print("drop table mapping.format_sort;")
-print("create table mapping.format_sort ( format integer, sort integer );")
-print("create index format_sort_format_ndx on mapping.format_sort(format);")
-print("create index format_sort_sort_ndx on mapping.format_sort(sort);")
 
-id = 1
-id = output_list(id, DIGITAL_FORMATS)
-id = output_list(id, VIDEO_FORMATS)
-id = output_list(id, ANALOG_FORMATS)
+def create_formats_table(conn):
+    """
+        Create the formats table that contains the preferred sort order for releases in the MSB mapping.
+    """
+
+    try:
+        with conn.cursor() as curs:
+            curs.execute("DROP TABLE IF EXISTS mapping.format_sort")
+            curs.execute("CREATE TABLE mapping.format_sort ( format integer, sort integer )")
+            id = insert_rows(1, curs, DIGITAL_FORMATS)
+            id = insert_rows(id, curs, VIDEO_FORMATS)
+            id = insert_rows(id, curs, ANALOG_FORMATS)
+            curs.execute("CREATE INDEX format_sort_format_ndx ON mapping.format_sort(format)")
+            curs.execute("CREATE INDEX format_sort_sort_ndx ON mapping.format_sort(sort)")
+        conn.commit()
+    except (psycopg2.errors.OperationalError, psycopg2.errors.UndefinedTable) as err:
+        print("failed to create formats table")
+        conn.rollback()
+        raise
